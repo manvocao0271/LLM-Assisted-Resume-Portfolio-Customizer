@@ -160,15 +160,7 @@ def merge_contact_links(
 ) -> tuple[list[dict[str, str | int]], list[str]]:
 	combined: dict[str, dict[str, str | int]] = {}
 	order: list[str] = []
-
-	for url in text_urls:
-		canonical = canonicalize_http_url(url)
-		if not canonical or canonical.startswith(("mailto:", "tel:")):
-			continue
-		if canonical not in combined:
-			combined[canonical] = {"url": canonical, "source": "text"}
-		order.append(canonical)
-	combined[canonical]["label"] = combined[canonical].get("label") or url
+	embedded_domains: set[str] = set()
 
 	for entry in embedded_payload:
 		if entry.get("type") != "url":
@@ -189,6 +181,25 @@ def merge_contact_links(
 			payload["page"] = entry["page"]
 		if canonical not in order:
 			order.append(canonical)
+		domain = urlparse(canonical).netloc
+		if domain:
+			embedded_domains.add(domain)
+
+	for url in text_urls:
+		canonical = canonicalize_http_url(url)
+		if not canonical or canonical.startswith(("mailto:", "tel:")):
+			continue
+		domain = urlparse(canonical).netloc
+		payload = combined.get(canonical)
+		if payload:
+			if payload.get("source") == "annotation":
+				payload["source"] = "text+annotation"
+			payload.setdefault("label", url)
+			continue
+		if domain and domain in embedded_domains:
+			continue
+		combined[canonical] = {"url": canonical, "source": "text", "label": url}
+		order.append(canonical)
 
 	links: list[dict[str, str | int]] = []
 	url_list: list[str] = []
