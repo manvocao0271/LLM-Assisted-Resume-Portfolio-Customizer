@@ -78,3 +78,42 @@ You can tailor the schema by editing the `SYSTEM_PROMPT` in `llm_label_resume.py
 - PDFs and generated artifacts (`labeled_resume.json`, `llm_raw.txt`) are git-ignored by default.
 - Run `--dry-run` during development to avoid spending tokens.
 - The script automatically loads `.env`, so keep that file out of version control.
+
+## Portfolio Generator Roadmap
+
+### Project Overview
+Build a web application that transforms PDF résumés into customizable, public portfolio landing pages. The workflow covers uploading a résumé, parsing and refining its contents, and publishing a polished site.
+
+### Architecture Approach
+- **Frontend**: React/Next.js for server-side rendering and SEO
+- **Backend**: FastAPI (Python) to reuse the existing parsing logic
+- **Database**: PostgreSQL for structured data, Redis for caching
+- **Storage**: S3-compatible object storage for PDFs and generated assets
+- **Deployment**: Vercel (frontend) plus Railway/Render (backend)
+
+### Development Phases
+1. **Foundation (Weeks 1-2)**
+  - Architecture & tech stack planning
+  - Spin up FastAPI with core middleware and health checks
+  - Wrap `llm_label_resume.py` in an async parsing service
+2. **Core Features (Weeks 3-5)**
+  - Design database schema for users, portfolios, and parsed sections
+  - Build PDF upload interface with validation and progress updates
+  - Create data review/edit UI for tweaking parsed content
+3. **Portfolio Generation (Weeks 6-8)**
+  - Implement modular theme system with responsive layouts
+  - Develop portfolio renderer with SEO and accessibility baked in
+  - Add customization controls (colors, typography, section ordering)
+4. **Publishing & Accounts (Weeks 9-10)**
+  - Generate shareable URLs and handle static/site rendering
+  - Add authentication, portfolio dashboards, and privacy settings
+5. **Production Hardening (Weeks 11-12)**
+  - Layer in security hardening, monitoring, and analytics
+  - Expand automated testing (unit, integration, E2E)
+  - Finalize CI/CD and deployment automation
+
+### Success Metrics
+- Upload-to-publish flow completes in under five minutes
+- Mobile Lighthouse score ≥ 90 across all themes
+- Robust parsing for >95% of common résumé PDF formats
+- At least 60% of users return to update or republish their portfolios
