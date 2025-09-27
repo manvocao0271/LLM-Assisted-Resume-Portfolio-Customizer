@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -34,37 +33,6 @@ SYSTEM_PROMPT = (
 )
 
 # ---- Minimal PDF extraction (inlined) ----
-
-SECTION_TITLES: set[str] = {
-	"summary",
-	"professional summary",
-	"objective",
-	"experience",
-	"work experience",
-	"professional experience",
-	"education",
-	"project experience",
-	"projects",
-	"technical skills",
-	"skills",
-	"leadership",
-	"leadership experience",
-	"research",
-	"research experience",
-	"certifications",
-	"awards",
-	"publications",
-	"activities",
-	"volunteer",
-	"volunteer experience",
-	"interests",
-	"achievements",
-	"honors",
-	"languages",
-	"skills & interests",
-	"skills and interests",
-}
-
 
 def _extract_links_from_page(page, page_number: int) -> list[dict[str, str | int]]:
 	links: list[dict[str, str | int]] = []
@@ -145,27 +113,6 @@ def resolve_pdf_path(provided_path: str | None) -> Path:
 	if len(pdfs) > 1:
 		raise ValueError("Multiple PDF files detected. Please specify which PDF to process with the positional argument.")
 	return pdfs[0].resolve()
-
-
-@dataclass
-class LLMContact:
-	emails: List[str]
-	phones: List[str]
-	urls: List[str]
-
-
-@dataclass
-class LLMOutput:
-	name: Optional[str]
-	contact: LLMContact
-	summary: List[str]
-	education: List[Dict[str, Any]]
-	experience: List[Dict[str, Any]]
-	projects: List[Dict[str, Any]]
-	skills: List[str]
-	links: List[Dict[str, Any]]  # embedded links from PDF, passthrough for traceability
-
-
 def call_openai(prompt: str, model: str = "gpt-4o-mini", base_url: str | None = None) -> str:
 	api_key = os.getenv("OPENAI_API_KEY")
 	if not api_key:
