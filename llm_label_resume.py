@@ -183,15 +183,98 @@ def _coerce_json(content: str) -> Dict[str, Any]:
 def label_with_llm(pdf_path: Path, model: str, dry_run: bool, base_url: str | None = None) -> Dict[str, Any]:
 	raw_text, links = extract_text_and_links(pdf_path)
 	if dry_run:
-		# Minimal stub output for verification without API calls
+		# When dry running, try to surface realistic data so the UI can be exercised.
+		sample_path = Path("labeled_resume.json")
+		if sample_path.exists():
+			try:
+				sample = json.loads(sample_path.read_text(encoding="utf-8"))
+				sample.setdefault("embedded_links", links)
+				return sample
+			except Exception:
+				pass
+
+		# Built-in illustrative payload if no saved sample is available
 		return {
-			"name": None,
-			"contact": {"emails": [], "phones": [], "urls": []},
-			"summary": [],
-			"education": [],
-			"experience": [],
-			"projects": [],
-			"skills": [],
+			"name": "Jordan Rivers",
+			"contact": {
+				"emails": ["jordan.rivers@example.com"],
+				"phones": ["(415) 555-0199"],
+				"urls": ["https://www.linkedin.com/in/jordanrivers", "https://github.com/jordanrivers"],
+			},
+			"summary": [
+				"Full-stack engineer focused on AI-assisted productivity tools.",
+				"Ships resilient systems, pairs with design to polish UX, and loves rapid experiments.",
+			],
+			"education": [
+				{
+					"institution": "Stanford University",
+					"degree": "B.S. Computer Science",
+					"location": "Stanford, CA",
+					"start_date": "2015-09",
+					"end_date": "2019-06",
+					"gpa": "3.8/4.0",
+					"coursework": ["Machine Learning", "Human-Computer Interaction"],
+				}
+			],
+			"experience": [
+				{
+					"title": "Senior Software Engineer",
+					"organization": "Nebula Labs",
+					"location": "San Francisco, CA",
+					"start_date": "2022-03",
+					"end_date": None,
+					"achievements": [
+						"Led a cross-functional squad building an AI note-taking assistant adopted by 50k users in beta.",
+						"Reduced average response latency by 35% through prompt caching and async streaming.",
+						"Mentored 5 engineers, instituting pairing sessions and shared architecture decision records.",
+					],
+				},
+				{
+					"title": "Software Engineer",
+					"organization": "Atlas Analytics",
+					"location": "Remote",
+					"start_date": "2019-07",
+					"end_date": "2022-02",
+					"achievements": [
+						"Built real-time dashboards with FastAPI and React processing 5M events/hour.",
+						"Introduced contract tests and CI pipelines, cutting production incidents by 40%.",
+					],
+				},
+			],
+			"projects": [
+				{
+					"title": "Open Source Prompt Playground",
+					"role": "Creator",
+					"start_date": "2023-01",
+					"end_date": "2023-06",
+					"bullets": [
+						"Developed a web sandbox for comparing LLM prompts with shareable snapshots.",
+						"Implemented plugin system allowing the community to add providers and templates.",
+					],
+				},
+				{
+					"title": "Hackathon: City Bikes Availability Predictor",
+					"role": "Team Lead",
+					"start_date": "2021-10",
+					"end_date": "2021-11",
+					"bullets": [
+						"Trained gradient-boosted models forecasting bike availability with 89% accuracy.",
+						"Deployed lightweight inference service with auto-refreshing dashboard widgets.",
+					],
+				},
+			],
+			"skills": [
+				"Python",
+				"TypeScript",
+				"React",
+				"FastAPI",
+				"PostgreSQL",
+				"Redis",
+				"Docker",
+				"Kubernetes",
+				"LangChain",
+				"OpenAI API",
+			],
 			"embedded_links": links,
 		}
 

@@ -13,6 +13,14 @@ labeled_resume.json
 llm_raw.txt
 *.pdf
 
+# Frontend/node artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# General node modules fallback
+node_modules/
+
 # macOS metadata
 .DS_Store
 

@@ -79,17 +79,57 @@ You can tailor the schema by editing the `SYSTEM_PROMPT` in `llm_label_resume.py
 - Run `--dry-run` during development to avoid spending tokens.
 - The script automatically loads `.env`, so keep that file out of version control.
 
+## Frontend prototype
+
+`frontend/` contains a Vite + React dashboard that walks through upload → review → customization. Tailwind CSS powers the styling and Zustand holds client state. To explore the demo locally:
+
+```zsh
+cd frontend
+npm install
+npm run dev
+```
+
+The build output lives in `frontend/dist` after running `npm run build`.
+
+> Tip: from the repository root you can run `npm run setup` once and then `npm run dev` to forward the command to the frontend package.
+
+### Backend API
+
+`backend/app.py` exposes a FastAPI service that ingests a PDF and returns normalized résumé data ready for the dashboard:
+
+```zsh
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r ../requirements.txt
+uvicorn app:app --reload
+```
+
+Once the virtual environment is activated you can stay at the repository root and launch the API as `uvicorn app:app --reload`; the top-level `app.py` simply re-exports the FastAPI instance from `backend/app.py` for convenience.
+
+By default the server trusts `LLM_DRY_RUN=0` (real LLM call). For demos without an API key set `LLM_DRY_RUN=1` to return structured stubs while still extracting hyperlinks. Adjust CORS via `API_ALLOW_ORIGINS` and override the model/base URL with `MODEL_NAME` and `OPENAI_BASE_URL`.
+
+When `LLM_DRY_RUN=1` is enabled, the parser will first look for a locally saved `labeled_resume.json` and reuse it so the UI fills with real-looking content. If that file is missing it falls back to an illustrative sample résumé.
+
+Point the frontend at the API by creating `frontend/.env.local`:
+
+```zsh
+VITE_API_BASE_URL=http://localhost:8000
+```
+
+During local development a Vite dev proxy forwards `/api/*` calls to `http://localhost:8000`, so the extra `.env` file is optional unless you are pointing at a remote backend or building for production.
+
 ## Portfolio Generator Roadmap
 
 ### Project Overview
 Build a web application that transforms PDF résumés into customizable, public portfolio landing pages. The workflow covers uploading a résumé, parsing and refining its contents, and publishing a polished site.
 
 ### Architecture Approach
-- **Frontend**: React/Next.js for server-side rendering and SEO
-- **Backend**: FastAPI (Python) to reuse the existing parsing logic
-- **Database**: PostgreSQL for structured data, Redis for caching
-- **Storage**: S3-compatible object storage for PDFs and generated assets
-- **Deployment**: Vercel (frontend) plus Railway/Render (backend)
+- **Frontend**: React/Next.js deployed on Vercel's Hobby tier (free SSL, automatic builds)
+- **Backend**: FastAPI (Python) hosted on Render free services
+- **Database**: PostgreSQL via Supabase free tier (includes backups and connection pooling) plus Upstash Redis free tier for caching
+- **Storage**: Supabase Storage free allowance for PDFs and generated assets (alternatively S3-compatible MinIO during local dev)
+- **Deployment**: GitHub → Vercel CI pipelines on free plans, with GitHub Actions (2K min/month) for smoke tests
 
 ### Development Phases
 1. **Foundation (Weeks 1-2)**
@@ -117,3 +157,6 @@ Build a web application that transforms PDF résumés into customizable, public 
 - Mobile Lighthouse score ≥ 90 across all themes
 - Robust parsing for >95% of common résumé PDF formats
 - At least 60% of users return to update or republish their portfolios
+
+npm run dev
+LLM_DRY_RUN=0 uvicorn app:app --port 8000
