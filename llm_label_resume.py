@@ -198,8 +198,8 @@ def label_with_llm(pdf_path: Path, model: str, dry_run: bool, base_url: str | No
 			"name": "Jordan Rivers",
 			"contact": {
 				"emails": ["jordan.rivers@example.com"],
-				"phones": ["(415) 555-0199"],
-				"urls": ["https://www.linkedin.com/in/jordanrivers", "https://github.com/jordanrivers"],
+				"phones": ["(123) 456-7890"],
+				"urls": ["https://www.linkedin.com/in/", "https://github.com/"],
 			},
 			"summary": [
 				"Full-stack engineer focused on AI-assisted productivity tools.",

@@ -2,8 +2,8 @@ import { create } from 'zustand';
 
 const THEME_OPTIONS = [
   { id: 'aurora', name: 'Aurora', primary: '#42a5f5', accent: '#f472b6' },
-  { id: 'midnight', name: 'Midnight', primary: '#6366f1', accent: '#22d3ee' },
-  { id: 'dawn', name: 'Dawn', primary: '#f97316', accent: '#facc15' },
+  { id: 'midnight', name: 'Midnight', primary: '#6366f1', accent: '#19a6bbff' },
+  { id: 'dawn', name: 'Dawn', primary: '#f95216ff', accent: '#facc15' },
 ];
 
 const initialData = {
