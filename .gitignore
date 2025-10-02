@@ -12,6 +12,7 @@ env/
 labeled_resume.json
 llm_raw.txt
 *.pdf
+resumeparser.db
 
 # Frontend/node artifacts
 frontend/node_modules/
