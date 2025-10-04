@@ -12,8 +12,15 @@ const normalizedBaseUrl = (() => {
 })();
 
 const candidateEndpoints = normalizedBaseUrl
-  ? [`${normalizedBaseUrl}/api/parse`]
-  : ['/api/parse', 'http://localhost:8000/api/parse', 'http://127.0.0.1:8000/api/parse'];
+  ? [`${normalizedBaseUrl}/api/resumes`, `${normalizedBaseUrl}/api/parse`]
+  : [
+      '/api/resumes',
+      '/api/parse',
+      'http://localhost:8000/api/resumes',
+      'http://localhost:8000/api/parse',
+      'http://127.0.0.1:8000/api/resumes',
+      'http://127.0.0.1:8000/api/parse',
+    ];
 
 export function UploadStep() {
   const inputRef = useRef(null);

@@ -11,7 +11,13 @@ function SectionHeading({ label }) {
 }
 
 export function PreviewPanel() {
-  const data = usePortfolioStore((state) => state.data);
+  const { data, meta, saveDraft, setMeta, saveState } = usePortfolioStore((state) => ({
+    data: state.data,
+    meta: state.meta,
+    saveDraft: state.saveDraft,
+    setMeta: state.setMeta,
+    saveState: state.saveState,
+  }));
 
   const theme = useMemo(
     () => data.themes.options.find((option) => option.id === data.themes.selected) ?? data.themes.options[0],
@@ -29,6 +35,24 @@ export function PreviewPanel() {
     ...(Array.isArray(contact.phones) ? contact.phones : []),
     ...(Array.isArray(contact.urls) ? contact.urls : []),
   ];
+
+  const handlePublish = async () => {
+    if (!meta?.portfolioId) {
+      return;
+    }
+    setMeta((previous) => ({
+      ...previous,
+      status: 'published',
+      visibility: 'public',
+    }));
+    await saveDraft();
+  };
+
+  const previewUrl = meta?.slug
+    ? `https://portfolio-demo.vercel.app/${meta.slug}`
+    : 'Publish to reserve a slug';
+
+  const publishDisabled = !meta?.portfolioId || saveState === 'saving';
 
   return (
     <aside
@@ -157,16 +181,21 @@ export function PreviewPanel() {
       <footer className="mt-6 flex items-center justify-between rounded-2xl bg-slate-900/80 px-5 py-4">
         <div>
           <p className="text-xs uppercase tracking-[0.4em] text-slate-400">Preview URL</p>
-          <p className="text-sm font-medium text-white">https://portfolio-demo.vercel.app/demo</p>
+          <p className="text-sm font-medium text-white">{previewUrl}</p>
         </div>
         <button
           type="button"
+          onClick={handlePublish}
+          disabled={publishDisabled}
           className={clsx(
             'rounded-full px-4 py-2 text-sm font-semibold text-white transition',
-            'bg-gradient-to-r from-brand-400 to-pink-500 shadow-lg shadow-brand-500/20 hover:from-brand-300 hover:to-pink-400'
+            'bg-gradient-to-r from-brand-400 to-pink-500 shadow-lg shadow-brand-500/20',
+            publishDisabled
+              ? 'cursor-not-allowed opacity-60'
+              : 'hover:from-brand-300 hover:to-pink-400'
           )}
         >
-          Publish draft
+          {saveState === 'saving' ? 'Saving…' : meta?.status === 'published' ? 'Republish' : 'Publish draft'}
         </button>
       </footer>
     </aside>
