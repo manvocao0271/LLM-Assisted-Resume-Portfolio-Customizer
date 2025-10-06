@@ -14,6 +14,7 @@ export function StepNavigation() {
     dirty,
     saveState,
     lastSavedAt,
+    lastError,
   } = usePortfolioStore((state) => ({
     step: state.step,
     prevStep: state.prevStep,
@@ -23,6 +24,7 @@ export function StepNavigation() {
     dirty: state.dirty,
     saveState: state.saveState,
     lastSavedAt: state.lastSavedAt,
+    lastError: state.lastError,
   }));
 
   const isAtBeginning = step === 0;
@@ -61,7 +63,7 @@ export function StepNavigation() {
       return 'Saving draft…';
     }
     if (saveState === 'error') {
-      return 'We could not save — try again.';
+      return lastError ? `Error: ${lastError}` : 'We could not save — try again.';
     }
     if (saveState === 'saved' && lastSavedAt) {
       const timestamp = new Date(lastSavedAt).toLocaleTimeString();

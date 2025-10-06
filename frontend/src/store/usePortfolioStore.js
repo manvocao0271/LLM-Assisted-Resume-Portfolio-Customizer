@@ -329,3 +329,5 @@ export const usePortfolioStore = create((set, get) => ({
     set({ meta: initialMeta, data: sanitizeData(initialData), dirty: false, lastSavedAt: null });
   },
 }));
+
+export const resolveApiUrl = withBaseUrl;

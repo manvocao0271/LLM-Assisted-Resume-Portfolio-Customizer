@@ -26,6 +26,9 @@ class ResumeDocument(Base):
     )
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
     file_size: Mapped[Optional[int]] = mapped_column(Integer)
+    storage_bucket: Mapped[Optional[str]] = mapped_column(String(128))
+    storage_path: Mapped[Optional[str]] = mapped_column(String(512))
+    storage_uploaded_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     llm_model: Mapped[Optional[str]] = mapped_column(String(120))
     dry_run: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     parsed_payload: Mapped[Dict[str, Any]] = mapped_column(

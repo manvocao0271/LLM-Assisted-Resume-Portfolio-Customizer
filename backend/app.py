@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import os
 import sys
 import tempfile
@@ -19,6 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from backend import storage
 from backend.database import get_session, init_models_if_needed
 from backend.models import PortfolioDraft, ResumeDocument
 from backend.schemas import PortfolioUpdatePayload
@@ -43,6 +45,8 @@ class UploadedPDF:
     filename: str
 
 app = FastAPI(title="Resume Parser API", version="0.1.0")
+
+logger = logging.getLogger(__name__)
 
 default_origins = {
     "http://localhost:5173",
@@ -231,6 +235,63 @@ def _enrich_with_metadata(data: Dict[str, Any], resume_id: uuid.UUID, portfolio_
     return enriched
 
 
+def _apply_storage_metadata(
+    payload: Dict[str, Any],
+    *,
+    bucket: str,
+    path: str,
+    signed_url: str | None = None,
+    uploaded_at: datetime | None = None,
+) -> None:
+    meta = payload.setdefault("meta", {})
+    storage_meta = meta.setdefault("storage", {})
+    storage_meta["provider"] = "supabase"
+    storage_meta["bucket"] = bucket
+    storage_meta["path"] = path
+
+    if uploaded_at is not None:
+        storage_meta["uploaded_at"] = uploaded_at.astimezone(timezone.utc).isoformat()
+    else:
+        storage_meta.pop("uploaded_at", None)
+
+    if signed_url:
+        storage_meta["signed_url"] = signed_url
+        storage_meta["expires_in"] = storage.DEFAULT_SIGNED_URL_TTL
+    else:
+        storage_meta.pop("signed_url", None)
+        storage_meta.pop("expires_in", None)
+
+
+async def _apply_storage_metadata_from_resume(resume: ResumeDocument | None, payload: Dict[str, Any]) -> None:
+    if not resume or not resume.storage_bucket or not resume.storage_path:
+        return
+
+    signed_url: str | None = None
+    if storage.is_enabled():
+        try:
+            signed_url = await storage.create_signed_url(resume.storage_bucket, resume.storage_path)
+        except Exception as exc:  # pragma: no cover - remote call failure
+            logger.warning("Unable to refresh Supabase signed URL for resume %s: %s", resume.id, exc)
+
+    _apply_storage_metadata(
+        payload,
+        bucket=resume.storage_bucket,
+        path=resume.storage_path,
+        signed_url=signed_url,
+        uploaded_at=resume.storage_uploaded_at,
+    )
+
+
+async def _maybe_upload_to_supabase(upload: UploadedPDF) -> storage.UploadedAsset | None:
+    if not storage.is_enabled():
+        return None
+    try:
+        return await storage.upload_resume_pdf(upload.path, upload.filename)
+    except Exception as exc:
+        logger.exception("Supabase upload failed for %s: %s", upload.filename, exc)
+        raise HTTPException(status_code=502, detail="Failed to persist PDF to storage.") from exc
+
+
 async def _persist_resume(
     session: AsyncSession,
     upload: UploadedPDF,
@@ -245,10 +306,24 @@ async def _persist_resume(
     normalized_copy = _enrich_with_metadata(normalized, resume_id, portfolio_id)
     _ensure_theme_structure(normalized_copy)
 
+    storage_result = await _maybe_upload_to_supabase(upload)
+    storage_uploaded_at = datetime.now(timezone.utc) if storage_result else None
+    if storage_result:
+        _apply_storage_metadata(
+            normalized_copy,
+            bucket=storage_result.bucket,
+            path=storage_result.path,
+            signed_url=storage_result.signed_url,
+            uploaded_at=storage_uploaded_at,
+        )
+
     resume_record = ResumeDocument(
         id=resume_id,
         original_filename=upload.filename,
         file_size=upload.size,
+        storage_bucket=storage_result.bucket if storage_result else None,
+        storage_path=storage_result.path if storage_result else None,
+        storage_uploaded_at=storage_uploaded_at,
         llm_model=model_name,
         dry_run=dry_run,
         parsed_payload=copy.deepcopy(parsed),
@@ -379,9 +454,12 @@ async def update_portfolio(
     if theme_choice:
         portfolio.theme = theme_choice
 
+    resume = await session.get(ResumeDocument, portfolio.resume_id)
+    if resume:
+        await _apply_storage_metadata_from_resume(resume, updated_content)
+
     portfolio.content = updated_content
 
-    resume = await session.get(ResumeDocument, portfolio.resume_id)
     if resume:
         resume.normalized_payload = copy.deepcopy(updated_content)
 
@@ -397,7 +475,10 @@ async def read_portfolio(
     portfolio = await session.get(PortfolioDraft, portfolio_id)
     if portfolio is None:
         raise HTTPException(status_code=404, detail="Portfolio not found.")
-    return {"data": copy.deepcopy(portfolio.content)}
+    content = copy.deepcopy(portfolio.content)
+    resume = await session.get(ResumeDocument, portfolio.resume_id)
+    await _apply_storage_metadata_from_resume(resume, content)
+    return {"data": content}
 
 
 @app.get("/api/portfolios/by-slug/{slug}")
@@ -415,7 +496,10 @@ async def read_portfolio_by_slug(
     portfolio = result.scalar_one_or_none()
     if portfolio is None:
         raise HTTPException(status_code=404, detail="Portfolio not found.")
-    return {"data": copy.deepcopy(portfolio.content)}
+    content = copy.deepcopy(portfolio.content)
+    resume = await session.get(ResumeDocument, portfolio.resume_id)
+    await _apply_storage_metadata_from_resume(resume, content)
+    return {"data": content}
 
 
 @app.get("/health", tags=["meta"])
