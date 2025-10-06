@@ -11,11 +11,87 @@ const sections = [
 ];
 
 export function CustomizeStep() {
-  const data = usePortfolioStore((state) => state.data);
-  const updateTheme = usePortfolioStore((state) => state.updateTheme);
+  const { data, meta, updateTheme, setMeta } = usePortfolioStore((state) => ({
+    data: state.data,
+    meta: state.meta,
+    updateTheme: state.updateTheme,
+    setMeta: state.setMeta,
+  }));
+
+  const handleSlugChange = (event) => {
+    const rawValue = event.target.value;
+    const sanitized = rawValue
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-{2,}/g, '-')
+      .replace(/^-|-$/g, '');
+    setMeta((previous) => ({ ...previous, slug: sanitized }));
+  };
+
+  const handleStatusChange = (event) => {
+    const value = event.target.value;
+    setMeta((previous) => ({ ...previous, status: value }));
+  };
+
+  const handleVisibilityChange = (event) => {
+    const value = event.target.value;
+    setMeta((previous) => ({ ...previous, visibility: value }));
+  };
 
   return (
     <div className="space-y-6">
+      <section className="rounded-2xl border border-slate-700 bg-slate-800/70 p-6 shadow-card">
+        <header className="flex items-center gap-3 border-b border-slate-700 pb-4">
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500/20 text-brand-300">
+            <GlobeIcon className="h-5 w-5" />
+          </span>
+          <div>
+            <h3 className="font-semibold text-white">Publishing settings</h3>
+            <p className="text-sm text-slate-400">Control the slug, draft status, and visibility of your public page.</p>
+          </div>
+        </header>
+        <div className="mt-5 grid gap-5 md:grid-cols-2">
+          <label className="flex flex-col gap-2 text-sm text-slate-200">
+            <span className="text-xs uppercase tracking-[0.3em] text-slate-500">Portfolio slug</span>
+            <input
+              type="text"
+              value={meta.slug || ''}
+              placeholder="your-name"
+              onChange={handleSlugChange}
+              className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
+            />
+            <span className="text-xs text-slate-500">Will appear after your domain: <code>/[slug]</code>.</span>
+          </label>
+
+          <label className="flex flex-col gap-2 text-sm text-slate-200">
+            <span className="text-xs uppercase tracking-[0.3em] text-slate-500">Status</span>
+            <select
+              value={meta.status}
+              onChange={handleStatusChange}
+              className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
+            >
+              <option value="draft">Draft (hidden)</option>
+              <option value="published">Published</option>
+            </select>
+            <span className="text-xs text-slate-500">Publishing will expose the portfolio to anyone with the link.</span>
+          </label>
+
+          <label className="flex flex-col gap-2 text-sm text-slate-200">
+            <span className="text-xs uppercase tracking-[0.3em] text-slate-500">Visibility</span>
+            <select
+              value={meta.visibility}
+              onChange={handleVisibilityChange}
+              className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
+            >
+              <option value="private">Private (only you)</option>
+              <option value="unlisted">Unlisted (shared link)</option>
+              <option value="public">Public (discoverable)</option>
+            </select>
+            <span className="text-xs text-slate-500">Match visibility to how broadly you want to share the page.</span>
+          </label>
+        </div>
+      </section>
+
       <section className="rounded-2xl border border-slate-700 bg-slate-800/70 p-6 shadow-card">
         <header className="flex items-center gap-3 border-b border-slate-700 pb-4">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500/20 text-brand-300">

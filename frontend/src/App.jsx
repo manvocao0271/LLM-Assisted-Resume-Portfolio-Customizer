@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Header } from './components/Header.jsx';
 import { StepIndicator } from './components/StepIndicator.jsx';
 import { UploadStep } from './components/UploadStep.jsx';
@@ -10,10 +11,19 @@ import { usePortfolioStore } from './store/usePortfolioStore.js';
 const steps = [UploadStep, ReviewStep, CustomizeStep];
 
 export default function App() {
-  const { step, setStep } = usePortfolioStore((state) => ({
+  const { step, setStep, restoreSession } = usePortfolioStore((state) => ({
     step: state.step,
     setStep: state.setStep,
+    restoreSession: state.restoreSession,
   }));
+
+  const hasHydratedSession = useRef(false);
+
+  useEffect(() => {
+    if (hasHydratedSession.current) return;
+    hasHydratedSession.current = true;
+    restoreSession();
+  }, [restoreSession]);
 
   const ActiveStepComponent = steps[step] ?? UploadStep;
 

@@ -2,6 +2,53 @@
 
 Single-file CLI that converts a resume PDF into structured JSON with the help of any OpenAI-compatible LLM.
 
+## Project status
+
+What’s already working and what’s left for a minimal publishable MVP.
+
+### ✅ Done
+- CLI parser (`llm_label_resume.py`)
+  - Dry-run mode that returns a realistic sample or reuses `labeled_resume.json`
+  - OpenAI-compatible provider support via `OPENAI_BASE_URL`, `MODEL_NAME`, `FORCE_JSON`
+  - Link extraction from PDF annotations for traceability
+- FastAPI backend (`backend/app.py`)
+  - `/api/parse` endpoint normalizes parser output for the UI
+  - CORS configured; `/health` endpoint; root entrypoint (`app.py`) for `uvicorn app:app`
+- Persistence bootstrap
+  - Async SQLAlchemy models + Alembic migrations for resumes and portfolio drafts
+  - Defaults to local SQLite when `DATABASE_URL` is unset; Postgres-ready via `postgresql+asyncpg://`
+  - Supabase-aware: when `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` are set, uploads persist PDFs to private Storage buckets
+- Frontend prototype (`frontend/`)
+  - Vite + React + Tailwind + Zustand multi-step flow (Upload → Review → Customize → Preview)
+  - Upload step retries common API base URLs and supports `VITE_API_BASE_URL`
+- Dev ergonomics
+  - Vite proxy forwards `/api/*` to the backend during dev
+  - Root npm scripts (`npm run setup|dev|build|preview`) delegate to the frontend package
+
+### 🚧 Next steps (MVP)
+- Persistence enhancements
+  - Finalize Supabase Postgres provisioning (`DATABASE_URL`, connection pooling, CI migrations)
+  - Add storage hygiene tooling (prune orphaned uploads, refresh signed URLs on demand)
+- Auth & sessions
+  - Supabase Auth or email magic link; protect write endpoints, keep public GET by slug
+- File storage
+  - Store original PDFs in Supabase Storage (or S3-compatible in dev) and persist `file_url`
+- Publishing flow
+  - "Publish draft" → reserve unique slug, set `published=true`, public route renders portfolio
+- Theme & visibility persistence
+  - Save theme selection and section toggles; load them into Preview
+- Robust errors & health hints
+  - Clear frontend messages for unreachable backend vs. parse failures; optional `/health` probe fallback
+- Tests
+  - Backend unit tests (normalizers, JSON coercion) + integration tests for `/api/parse`
+  - Frontend store/component tests for Review/Customize
+- CI/CD
+  - GitHub Actions for lint/test/build; deploy frontend (Vercel) and backend (Render/Fly)
+- Cache & rate limits (optional)
+  - Upstash Redis: prompt/result cache by PDF hash; simple per-user quotas
+
+If you want this scaffolded automatically, start with DB models + three endpoints, then wire Review/Customize to save+load.
+
 ## Requirements
 
 - Python 3.10+
@@ -13,6 +60,11 @@ Single-file CLI that converts a resume PDF into structured JSON with the help of
    ```zsh
    cp .env.example .env
    # edit .env to add your API key / defaults
+  # Optional Supabase integration (storage + Postgres)
+  # SUPABASE_URL=https://your-project.supabase.co
+  # SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+  # SUPABASE_RESUME_BUCKET=resumes
+  # SUPABASE_ARTIFACT_BUCKET=artifacts
    ```
 2. Optionally, override defaults via CLI flags (`--model`, `--base-url`).
 
@@ -61,6 +113,12 @@ Key flags:
 - `MODEL_NAME` (optional default model)
 - `FORCE_JSON` – set to `0` if your provider rejects `response_format`
 - `DEBUG_JSON` – set to any value to dump raw responses to `llm_raw.txt` when JSON parsing fails
+- `SUPABASE_URL` – project URL (optional; enable Supabase Storage + Postgres)
+- `SUPABASE_SERVICE_ROLE_KEY` – service role key used by the backend for storage and DB access
+- `SUPABASE_RESUME_BUCKET` – bucket name for uploaded PDFs (defaults to `resumes` when unset)
+- `SUPABASE_ARTIFACT_BUCKET` – bucket for generated assets (defaults to `artifacts` when unset)
+
+All of these keys are scaffolded in `.env.example`; copy the file and fill in the values that apply to your environment.
 
 ## Output
 
@@ -91,6 +149,8 @@ npm run dev
 
 The build output lives in `frontend/dist` after running `npm run build`.
 
+Published portfolios are served client-side at `/p/:slug` (for example `http://localhost:5173/p/demo-slug`) and proxy through to the backend’s `GET /api/portfolios/by-slug/{slug}` endpoint.
+
 > Tip: from the repository root you can run `npm run setup` once and then `npm run dev` to forward the command to the frontend package.
 
 ### Backend API
@@ -109,6 +169,15 @@ Once the virtual environment is activated you can stay at the repository root an
 
 By default the server trusts `LLM_DRY_RUN=0` (real LLM call). For demos without an API key set `LLM_DRY_RUN=1` to return structured stubs while still extracting hyperlinks. Adjust CORS via `API_ALLOW_ORIGINS` and override the model/base URL with `MODEL_NAME` and `OPENAI_BASE_URL`.
 
+Key endpoints and payloads:
+- `POST /api/resumes` – preferred upload endpoint. Parses the PDF, persists a `resume_document` & `portfolio_draft`, and returns normalized data plus `meta.resume_id` / `meta.portfolio_id` for follow-up calls.
+- `POST /api/parse` – legacy alias retained for the existing frontend; identical behavior to `/api/resumes`.
+- `PUT /api/portfolios/{portfolio_id}` – saves review/customization edits. The request body should include the same normalized structure returned from upload.
+- `GET /api/portfolios/{portfolio_id}` – fetches the latest draft payload for authenticated/editor flows.
+- `GET /api/portfolios/by-slug/{slug}` – public read model (only returns `published` + non-`private` portfolios).
+
+Every response includes a `meta` block with `resume_id`, `portfolio_id`, and current `status`/`visibility` so the UI can keep track of persisted entities.
+
 When `LLM_DRY_RUN=1` is enabled, the parser will first look for a locally saved `labeled_resume.json` and reuse it so the UI fills with real-looking content. If that file is missing it falls back to an illustrative sample résumé.
 
 Point the frontend at the API by creating `frontend/.env.local`:
@@ -118,6 +187,82 @@ VITE_API_BASE_URL=http://localhost:8000
 ```
 
 During local development a Vite dev proxy forwards `/api/*` calls to `http://localhost:8000`, so the extra `.env` file is optional unless you are pointing at a remote backend or building for production.
+
+### Database & migrations
+
+- Set `DATABASE_URL` in `.env` when you are ready to use Postgres (example: `postgresql+asyncpg://user:pass@localhost:5432/resumeparser`). If the variable is omitted, the backend falls back to a local SQLite file `resumeparser.db`.
+- Apply migrations with Alembic from the project root:
+  ```zsh
+  alembic upgrade head
+  ```
+- Generate future schema changes with:
+  ```zsh
+  alembic revision --autogenerate -m "describe change"
+  ```
+- If you hit `ValueError: the greenlet library is required`, reinstall the backend deps after pulling updates:
+  ```zsh
+  pip install -r requirements.txt
+  ```
+- The async SQLAlchemy session is configured in `backend/database.py`; `init_models_if_needed()` will auto-create tables only for the SQLite fallback to keep local prototyping frictionless.
+
+### Supabase storage & Postgres
+
+1. Create a Supabase project (the free tier is enough for prototyping) and grab the **project URL** and **service role key**.
+2. In Supabase &rarr; Storage, create two **private** buckets (defaults used by the app are `resumes` for uploads and `artifacts` for generated assets).
+3. Set the following in `.env` (in addition to `DATABASE_URL`):
+  ```ini
+  SUPABASE_URL=https://your-project.supabase.co
+  SUPABASE_SERVICE_ROLE_KEY=service-role-key
+  SUPABASE_RESUME_BUCKET=resumes
+  SUPABASE_ARTIFACT_BUCKET=artifacts
+  ```
+  Use the Supabase connection string (from Project Settings &rarr; Database) for `DATABASE_URL`, replacing the driver prefix with `postgresql+asyncpg://`.
+4. Apply migrations so the managed Postgres instance is up to date:
+  ```zsh
+  alembic upgrade head
+  ```
+5. Run the backend. When Supabase credentials are present the upload endpoint streams PDFs to Storage and includes a short-lived signed URL in the API response. If the variables are left blank the app falls back to local disk and SQLite for quick demos.
+6. Verify the integration:
+  - Install backend dependencies *after* updating `.env` so the Supabase Python SDK is available:
+    ```zsh
+    pip install -r requirements.txt
+    ```
+  - Start the API (`uvicorn app:app --reload --port 8000`), upload a PDF via the UI, and confirm the server log does **not** print `Supabase SDK not installed; storage integration disabled`.
+  - Inspect the `POST /api/resumes` response — the `data.meta.storage` block should list `bucket`, `path`, and a `signed_url`.
+  - Refresh the Supabase dashboard (`Storage → resumes`) and confirm the uploaded file appears.
+
+> Troubleshooting: if the backend logs `Supabase SDK not installed; storage integration disabled`, reinstall the requirements or run `pip install supabase` inside your virtualenv, then restart `uvicorn`.
+
+## Development quickstart
+
+Run the backend and frontend side-by-side during development.
+
+Backend (root directory):
+```zsh
+# create a virtual environment (first time)
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# dry-run demo (no API key needed)
+LLM_DRY_RUN=1 uvicorn app:app --port 8000
+
+# or live LLM (requires env vars OPENAI_API_KEY, optional OPENAI_BASE_URL, MODEL_NAME)
+# LLM_DRY_RUN=0 uvicorn app:app --port 8000
+# when SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY are set, uploads are pushed to Supabase Storage
+```
+
+Frontend (in another terminal):
+```zsh
+cd frontend
+npm install
+npm run dev
+```
+
+The frontend will proxy `/api/*` to `http://localhost:8000`. To point at a remote backend, create `frontend/.env.local` with:
+```ini
+VITE_API_BASE_URL=https://your-api.example.com
+```
 
 ## Portfolio Generator Roadmap
 

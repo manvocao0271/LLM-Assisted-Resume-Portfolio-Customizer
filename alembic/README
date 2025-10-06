@@ -1,0 +1,3 @@
+This Alembic directory contains migration scripts for the ResumeParser backend.
+
+Use `alembic revision --autogenerate -m "message"` to create new migrations and `alembic upgrade head` to apply them.
