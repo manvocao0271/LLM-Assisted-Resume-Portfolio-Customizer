@@ -41,6 +41,50 @@ const initialMeta = {
   publishedAt: null,
 };
 
+const generateSummary = (payload) => {
+  const name = typeof payload.name === 'string' ? payload.name.trim() : '';
+  const experience = Array.isArray(payload.experience) ? payload.experience : [];
+  const skills = Array.isArray(payload.skills) ? payload.skills : [];
+
+  const leadExperience = experience.find((entry) => entry && (entry.role || entry.company || entry.period));
+
+  const skillHighlights = skills.filter(Boolean).slice(0, 3);
+
+  if (leadExperience) {
+    const role = leadExperience.role || leadExperience.title || 'experienced professional';
+    const company = leadExperience.company || leadExperience.organization || '';
+    const period = leadExperience.period || '';
+
+    const segments = [
+      name ? `${name} is a` : 'Experienced',
+      `${role}${company ? ` at ${company}` : ''}`,
+      period ? `with a track record spanning ${period}.` : 'with a track record of delivering impact.',
+    ];
+
+    if (skillHighlights.length) {
+      segments.push(`Skilled in ${skillHighlights.join(', ')} and eager to showcase work through a polished portfolio.`);
+    } else {
+      segments.push('Eager to translate recent achievements into a standout portfolio presentation.');
+    }
+
+    return segments.join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  if (skillHighlights.length) {
+    return (
+      name
+        ? `${name} brings strengths in ${skillHighlights.join(', ')} and is ready to highlight accomplishments in a tailored portfolio.`
+        : `Skilled in ${skillHighlights.join(', ')}, ready to highlight accomplishments in a tailored portfolio.`
+    );
+  }
+
+  return (
+    name
+      ? `${name} is preparing a portfolio to spotlight key achievements, strengths, and career story.`
+      : 'Preparing a portfolio to spotlight key achievements, strengths, and career story.'
+  );
+};
+
 const normalizedBaseUrl = (() => {
   const fromEnv = import.meta.env.VITE_API_BASE_URL;
   if (!fromEnv) return '';
@@ -110,10 +154,145 @@ const sanitizeData = (payload) => {
 
   const themeOptions = Array.isArray(themes.options) && themes.options.length > 0 ? themes.options : THEME_OPTIONS;
   const selectedTheme = themes.selected || themeOptions[0]?.id || THEME_OPTIONS[0].id;
+  const normalizedSummary = Array.isArray(base.summary)
+    ? base.summary.map((line) => String(line).trim()).filter(Boolean).join(' ')
+    : typeof base.summary === 'string'
+      ? base.summary.trim()
+      : '';
+  const summary = normalizedSummary || generateSummary(base);
+
+  const extractText = (value) => {
+    if (value == null) {
+      return '';
+    }
+    if (typeof value === 'string') {
+      return value.trim();
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return String(value).trim();
+    }
+    if (Array.isArray(value)) {
+      return value.map(extractText).filter(Boolean).join(' ');
+    }
+    if (typeof value === 'object') {
+      const preferredKeys = ['text', 'description', 'summary', 'detail', 'value', 'content'];
+      for (const key of preferredKeys) {
+        if (key in value && value[key] != null) {
+          const result = extractText(value[key]);
+          if (result) {
+            return result;
+          }
+        }
+      }
+      const combined = Object.values(value).map(extractText).filter(Boolean);
+      if (combined.length) {
+        return combined.join(' ');
+      }
+    }
+    return '';
+  };
+
+  const normalizeStringArray = (value) => {
+    if (Array.isArray(value)) {
+      return value.map(extractText).filter(Boolean);
+    }
+    if (typeof value === 'string' && value.trim()) {
+      return [value.trim()];
+    }
+    return [];
+  };
+
+  const splitIntoLines = (value) => {
+    if (typeof value !== 'string') {
+      return [];
+    }
+    return value
+      .split(/\r?\n+/)
+      .map((line) => line.replace(/^[\s•·\-\u2022\u2219]+/, '').trim())
+      .filter(Boolean);
+  };
+
+  const expandLines = (values) => {
+    if (!Array.isArray(values)) {
+      return [];
+    }
+    return values
+      .flatMap((entry) => (typeof entry === 'string' ? splitIntoLines(entry) : []))
+      .filter(Boolean);
+  };
+
+  const normalizedExperience = Array.isArray(base.experience)
+    ? base.experience.map((entry) => {
+        const bullets = normalizeStringArray(entry?.bullets ?? entry?.achievements);
+        return {
+          ...entry,
+          id: entry?.id ?? crypto.randomUUID?.() ?? `exp-${Math.random().toString(36).slice(2, 10)}`,
+          role: String(entry?.role ?? entry?.title ?? '').trim(),
+          company: String(entry?.company ?? entry?.organization ?? '').trim(),
+          period: String(entry?.period ?? '').trim(),
+          bullets,
+        };
+      })
+    : [];
+
+  const normalizedProjects = Array.isArray(base.projects)
+    ? base.projects.map((project) => {
+        const bulletSources = [project?.bullets, project?.highlights, project?.achievements, project?.details];
+        const explicitBullets = bulletSources.flatMap((source) => {
+          if (Array.isArray(source)) {
+            return expandLines(source);
+          }
+          if (typeof source === 'string') {
+            return splitIntoLines(source);
+          }
+          return [];
+        });
+        const descriptionCandidates = [project?.description, project?.summary];
+
+        let bullets = explicitBullets;
+        if (!bullets.length) {
+          for (const candidate of descriptionCandidates) {
+            if (typeof candidate === 'string') {
+              const lines = splitIntoLines(candidate);
+              if (lines.length) {
+                bullets = lines;
+                break;
+              }
+            }
+          }
+        }
+
+        const description = bullets.length ? bullets.join('\n') : '';
+
+        return {
+          ...project,
+          id: project?.id ?? crypto.randomUUID?.() ?? `proj-${Math.random().toString(36).slice(2, 10)}`,
+          name: String(project?.name ?? project?.title ?? '').trim(),
+          role: String(project?.role ?? '').trim(),
+          description,
+          link: String(project?.link ?? project?.url ?? '').trim(),
+          bullets,
+        };
+      })
+    : [];
+
+  const normalizedEducation = Array.isArray(base.education)
+    ? base.education.map((entry) => ({
+        ...entry,
+        id: entry?.id ?? crypto.randomUUID?.() ?? `edu-${Math.random().toString(36).slice(2, 10)}`,
+        school: String(entry?.school ?? entry?.institution ?? '').trim(),
+        degree: String(entry?.degree ?? entry?.program ?? '').trim(),
+        period: String(entry?.period ?? '').trim(),
+      }))
+    : [];
 
   return {
     ...initialData,
     ...base,
+    summary,
+    experience: normalizedExperience,
+    projects: normalizedProjects,
+    education: normalizedEducation,
     contact: {
       emails: Array.isArray(contact.emails) ? contact.emails : [],
       phones: Array.isArray(contact.phones) ? contact.phones : [],
