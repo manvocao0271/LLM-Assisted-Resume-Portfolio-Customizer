@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 
 import { usePortfolioStore, REVIEW_SECTION_KEYS } from '../store/usePortfolioStore.js';
 
@@ -14,6 +14,44 @@ function SectionCard({ title, description, controls, children }) {
       </header>
       <div className="mt-4 space-y-4 text-sm text-slate-200">{children}</div>
     </section>
+  );
+}
+
+function AutoResizeTextarea({ value, onChange, className, minRows = 2, maxHeight, ...props }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.overflowY = 'hidden';
+    const next = el.scrollHeight;
+    if (maxHeight && next > maxHeight) {
+      el.style.height = `${maxHeight}px`;
+      el.style.overflowY = 'auto';
+    } else {
+      el.style.height = `${next}px`;
+    }
+  }, [value, maxHeight]);
+
+  // Ensure initial sizing after first paint
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.overflowY = 'hidden';
+    el.style.height = `${el.scrollHeight}px`;
+  }, []);
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={onChange}
+      className={className}
+      rows={minRows}
+      {...props}
+    />
   );
 }
 
@@ -108,9 +146,8 @@ export function ReviewStep() {
           </div>
           <div>
             <label className="text-xs uppercase tracking-widest text-slate-400">Highlights (one per line)</label>
-            <textarea
+            <AutoResizeTextarea
               value={(Array.isArray(item.bullets) ? item.bullets : []).join('\n')}
-              rows={3}
               onChange={(event) => {
                 const value = event.target.value.split('\n').map((line) => line.trim()).filter(Boolean);
                 updateData((previous) => ({
@@ -174,9 +211,8 @@ export function ReviewStep() {
               </div>
               <div>
                 <label className="text-xs uppercase tracking-widest text-slate-400">Highlights (one per line)</label>
-                <textarea
+                <AutoResizeTextarea
                   value={textareaValue}
-                  rows={3}
                   onChange={(event) => {
                     const lines = event.target.value
                       .split('\n')
@@ -300,9 +336,8 @@ export function ReviewStep() {
       {urls.length > 0 && (
         <label className="flex flex-col gap-2">
           <span className="text-xs uppercase tracking-widest text-slate-400">Links</span>
-          <textarea
+          <AutoResizeTextarea
             value={urls.join('\n')}
-            rows={urls.length > 3 ? 4 : 3}
             onChange={(event) => {
               const values = event.target.value
                 .split('\n')
@@ -326,10 +361,9 @@ export function ReviewStep() {
 
   const renderSkillsContent = () => (
     <>
-      <textarea
+      <AutoResizeTextarea
         value={skills.join(', ')}
         onChange={handleSkillsChange}
-        rows={2}
         className="w-full rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
       />
       <p className="text-xs text-slate-500">Separate skills with commas. These power the tag cloud on your portfolio.</p>
@@ -360,10 +394,9 @@ export function ReviewStep() {
       description: 'Fine tune the elevator pitch visitors will read first.',
       shouldRender: true,
       render: () => (
-        <textarea
+        <AutoResizeTextarea
           value={data.summary || ''}
           onChange={handleSummaryChange}
-          rows={4}
           className="w-full rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
         />
       ),
