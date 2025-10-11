@@ -1,17 +1,8 @@
-import { useRef, useState } from 'react';
-import classNames from 'classnames';
+import { useMemo } from 'react';
 
 import { usePortfolioStore, REVIEW_SECTION_KEYS } from '../store/usePortfolioStore.js';
 
-function GripIcon(props) {
-  return (
-    <svg viewBox="0 0 20 20" fill="currentColor" aria-hidden="true" className="h-4 w-4" {...props}>
-      <path d="M7 5a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm8 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM7 10a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm8 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0ZM7 15a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm8 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z" />
-    </svg>
-  );
-}
-
-function SectionCard({ title, description, dragHandle, children }) {
+function SectionCard({ title, description, controls, children }) {
   return (
     <section className="rounded-2xl border border-slate-700 bg-slate-800/70 p-5 shadow-card">
       <header className="flex items-start justify-between gap-3 border-b border-slate-700 pb-3">
@@ -19,7 +10,7 @@ function SectionCard({ title, description, dragHandle, children }) {
           <h3 className="font-semibold text-white">{title}</h3>
           {description ? <p className="mt-1 text-xs text-slate-400">{description}</p> : null}
         </div>
-        {dragHandle ? <div className="shrink-0">{dragHandle}</div> : null}
+        {controls ? <div className="shrink-0 flex items-center gap-2">{controls}</div> : null}
       </header>
       <div className="mt-4 space-y-4 text-sm text-slate-200">{children}</div>
     </section>
@@ -46,10 +37,6 @@ export function ReviewStep() {
   const hasProjects = projects.length > 0;
   const hasEducation = education.length > 0;
   const hasSkills = skills.length > 0;
-
-  const dragSourceKeyRef = useRef(null);
-  const [draggedKey, setDraggedKey] = useState('');
-  const [dragOverKey, setDragOverKey] = useState('');
 
   const handleSummaryChange = (event) => {
     const value = event.target.value;
@@ -351,6 +338,23 @@ export function ReviewStep() {
 
   const baseSectionEntries = [
     {
+      key: 'name',
+      title: 'Your Name',
+      description: 'First and last name that appear on your portfolio.',
+      shouldRender: true,
+      render: () => (
+        <input
+          value={data.name || ''}
+          onChange={(event) => {
+            const value = event.target.value;
+            updateData((previous) => ({ ...previous, name: value }));
+          }}
+          className="w-full rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
+          placeholder="Jane Doe"
+        />
+      ),
+    },
+    {
       key: 'summary',
       title: 'Professional Summary',
       description: 'Fine tune the elevator pitch visitors will read first.',
@@ -401,177 +405,72 @@ export function ReviewStep() {
     },
   ];
 
-  const activeSectionEntries = baseSectionEntries.filter((entry) => entry.shouldRender);
-  const orderIndex = (key) => {
-    const order = reviewOrder.indexOf(key);
-    if (order === -1) {
-      return REVIEW_SECTION_KEYS.indexOf(key);
-    }
-    return order;
-  };
-  const sectionEntries = [...activeSectionEntries].sort((a, b) => orderIndex(a.key) - orderIndex(b.key));
+  const activeSectionEntries = useMemo(() => baseSectionEntries.filter((entry) => entry.shouldRender), [baseSectionEntries]);
+  const sectionEntries = useMemo(() => {
+    const orderIndex = (key) => {
+      const order = reviewOrder.indexOf(key);
+      if (order === -1) {
+        return REVIEW_SECTION_KEYS.indexOf(key);
+      }
+      return order;
+    };
+    return [...activeSectionEntries].sort((a, b) => orderIndex(a.key) - orderIndex(b.key));
+  }, [activeSectionEntries, reviewOrder]);
 
-  const handleDragStart = (key) => (event) => {
-    dragSourceKeyRef.current = key;
-    setDraggedKey(key);
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', key);
-  };
-
-  const handleDragEnd = () => {
-    dragSourceKeyRef.current = null;
-    setDraggedKey('');
-    setDragOverKey('');
-  };
-
-  const handleDragEnter = (key) => (event) => {
-    if (!dragSourceKeyRef.current || dragSourceKeyRef.current === key) {
-      return;
-    }
-    event.preventDefault();
-    setDragOverKey(key);
-  };
-
-  const handleDragOver = (key) => (event) => {
-    if (!dragSourceKeyRef.current || dragSourceKeyRef.current === key) {
-      return;
-    }
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
-    setDragOverKey(key);
-  };
-
-  const moveSection = (sourceKey, targetKey, position = 'before') => {
-    if (!sourceKey || sourceKey === targetKey) {
-      return;
-    }
-
+  const swapWithIndex = (index, direction) => {
     setReviewOrder((current) => {
-      const next = [...current];
-      const sourceIndex = next.indexOf(sourceKey);
-      const targetIndex = next.indexOf(targetKey);
-
-      if (sourceIndex === -1 || targetIndex === -1) {
-        return next;
-      }
-
-      const [moved] = next.splice(sourceIndex, 1);
-      let insertionIndex = targetIndex;
-
-      if (position === 'after') {
-        insertionIndex = targetIndex + 1;
-      }
-
-      if (sourceIndex < targetIndex) {
-        insertionIndex -= 1;
-      }
-
-      insertionIndex = Math.max(0, Math.min(next.length, insertionIndex));
-
-      next.splice(insertionIndex, 0, moved);
+      const visibleKeys = activeSectionEntries.map((e) => e.key);
+      const orderedVisible = current.filter((k) => visibleKeys.includes(k));
+      const original = [...current];
+      const key = orderedVisible[index];
+      const swapIndex = direction === 'up' ? index - 1 : index + 1;
+      if (swapIndex < 0 || swapIndex >= orderedVisible.length) return current;
+      const neighborKey = orderedVisible[swapIndex];
+      const a = original.indexOf(key);
+      const b = original.indexOf(neighborKey);
+      if (a === -1 || b === -1) return current;
+      const next = [...original];
+      [next[a], next[b]] = [next[b], next[a]];
       return next;
     });
-  };
-
-  const handleDrop = (key) => (event) => {
-    event.preventDefault();
-    const sourceKey = dragSourceKeyRef.current;
-    moveSection(sourceKey, key, 'before');
-    handleDragEnd();
-  };
-
-  const handleDropAtEnd = (event) => {
-    event.preventDefault();
-    const sourceKey = dragSourceKeyRef.current;
-    if (!sourceKey) {
-      return;
-    }
-    setReviewOrder((current) => {
-      const next = [...current];
-      const sourceIndex = next.indexOf(sourceKey);
-      if (sourceIndex === -1) {
-        return next;
-      }
-      const [moved] = next.splice(sourceIndex, 1);
-      next.push(moved);
-      return next;
-    });
-    handleDragEnd();
-  };
-
-  const handleDragOverEnd = (event) => {
-    if (!dragSourceKeyRef.current) {
-      return;
-    }
-    event.preventDefault();
-    setDragOverKey('__end');
-    event.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDragLeaveZone = (key) => () => {
-    if (dragOverKey === key) {
-      setDragOverKey('');
-    }
   };
 
   return (
     <div className="space-y-4">
-      {sectionEntries.map((section) => {
-        const isDragging = draggedKey === section.key;
-        const isActiveDrop = dragOverKey === section.key;
-
-        const handleButton = (
-          <button
-            type="button"
-            draggable
-            onDragStart={handleDragStart(section.key)}
-            onDragEnd={handleDragEnd}
-            className="flex h-9 w-9 cursor-grab items-center justify-center rounded-full border border-slate-600 bg-slate-900/60 text-slate-300 transition hover:border-brand-400 hover:text-brand-300 active:cursor-grabbing active:bg-slate-900"
-            aria-label={`Drag to reorder ${section.title}`}
-          >
-            <GripIcon />
-          </button>
+      {sectionEntries.map((section, idx) => {
+        const isFirst = idx === 0;
+        const isLast = idx === sectionEntries.length - 1;
+        const controls = (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => swapWithIndex(idx, 'up')}
+              disabled={isFirst}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-600 bg-slate-900/60 px-3 text-xs font-medium text-slate-300 transition hover:border-brand-400 hover:text-brand-300 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={`Move ${section.title} up`}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              onClick={() => swapWithIndex(idx, 'down')}
+              disabled={isLast}
+              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-600 bg-slate-900/60 px-3 text-xs font-medium text-slate-300 transition hover:border-brand-400 hover:text-brand-300 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={`Move ${section.title} down`}
+            >
+              ↓
+            </button>
+          </div>
         );
 
         return (
-          <div
-            key={section.key}
-            onDragEnter={handleDragEnter(section.key)}
-            onDragOver={handleDragOver(section.key)}
-            onDragLeave={handleDragLeaveZone(section.key)}
-            onDrop={handleDrop(section.key)}
-            className={classNames('transition-all', {
-              'opacity-60 scale-[0.99]': isDragging,
-              'ring-2 ring-brand-400/70 ring-offset-2 ring-offset-slate-900': isActiveDrop,
-            })}
-          >
-            <SectionCard
-              title={section.title}
-              description={section.description}
-              dragHandle={handleButton}
-            >
+          <div key={section.key} className="transition-all">
+            <SectionCard title={section.title} description={section.description} controls={controls}>
               {section.render()}
             </SectionCard>
           </div>
         );
       })}
-
-      {draggedKey ? (
-        <div
-          onDragOver={handleDragOverEnd}
-          onDragEnter={() => setDragOverKey('__end')}
-          onDragLeave={handleDragLeaveZone('__end')}
-          onDrop={handleDropAtEnd}
-          className={classNames(
-            'mt-4 flex h-12 items-center justify-center rounded-2xl border-2 border-dashed border-slate-700/40 text-xs font-medium uppercase tracking-[0.3em] text-slate-500 transition',
-            {
-              'border-brand-400/70 text-brand-200/80': dragOverKey === '__end',
-            },
-          )}
-        >
-          Drop here to move section to the end
-        </div>
-      ) : null}
 
       {sectionEntries.length === 1 && (
         <p className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4 text-sm text-slate-400">

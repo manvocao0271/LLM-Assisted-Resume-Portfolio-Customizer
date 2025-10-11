@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export const REVIEW_SECTION_KEYS = ['summary', 'contact', 'experience', 'projects', 'education', 'skills'];
+export const REVIEW_SECTION_KEYS = ['name', 'summary', 'contact', 'experience', 'projects', 'education', 'skills'];
 
 const THEME_OPTIONS = [
   { id: 'aurora', name: 'Aurora', primary: '#42a5f5', accent: '#f472b6' },
@@ -21,6 +21,9 @@ const initialData = {
     urls: [],
   },
   embedded_links: [],
+  layout: {
+    sectionOrder: [],
+  },
   themes: {
     selected: THEME_OPTIONS[0].id,
     options: THEME_OPTIONS,
@@ -77,7 +80,7 @@ const generateSummary = (payload) => {
     const period = leadExperience.period || '';
 
     const segments = [
-      name ? `${name} is a` : 'Experienced',
+      'Experienced',
       `${role}${company ? ` at ${company}` : ''}`,
       period ? `with a track record spanning ${period}.` : 'with a track record of delivering impact.',
     ];
@@ -93,16 +96,12 @@ const generateSummary = (payload) => {
 
   if (skillHighlights.length) {
     return (
-      name
-        ? `${name} brings strengths in ${skillHighlights.join(', ')} and is ready to highlight accomplishments in a tailored portfolio.`
-        : `Skilled in ${skillHighlights.join(', ')}, ready to highlight accomplishments in a tailored portfolio.`
+      `Skilled in ${skillHighlights.join(', ')}, ready to highlight accomplishments in a tailored portfolio.`
     );
   }
 
   return (
-    name
-      ? `${name} is preparing a portfolio to spotlight key achievements, strengths, and career story.`
-      : 'Preparing a portfolio to spotlight key achievements, strengths, and career story.'
+    'Preparing a portfolio to spotlight key achievements, strengths, and career story.'
   );
 };
 
@@ -172,6 +171,7 @@ const sanitizeData = (payload) => {
   const base = payload && typeof payload === 'object' ? payload : {};
   const contact = base.contact && typeof base.contact === 'object' ? base.contact : {};
   const themes = base.themes && typeof base.themes === 'object' ? base.themes : {};
+  const layout = base.layout && typeof base.layout === 'object' ? base.layout : {};
 
   const themeOptions = Array.isArray(themes.options) && themes.options.length > 0 ? themes.options : THEME_OPTIONS;
   const selectedTheme = themes.selected || themeOptions[0]?.id || THEME_OPTIONS[0].id;
@@ -180,7 +180,17 @@ const sanitizeData = (payload) => {
     : typeof base.summary === 'string'
       ? base.summary.trim()
       : '';
-  const summary = normalizedSummary || generateSummary(base);
+  const stripNameFromSummary = (text, fullName) => {
+    if (!text) return '';
+    if (!fullName) return text;
+    const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Remove leading occurrences like "John Doe —", "John Doe:", or "John Doe is a/an ..."
+    const nameRe = new RegExp(`^\\s*${escapeRegExp(fullName)}\\s*(?:[–—-]|:)?\\s*`, 'i');
+    const isARe = new RegExp(`^\\s*${escapeRegExp(fullName)}\\s+is\\s+an?\\b\\s*`, 'i');
+    let result = text.replace(nameRe, '').replace(isARe, '');
+    return result.trim();
+  };
+  const summary = stripNameFromSummary(normalizedSummary, String(base.name || '').trim()) || generateSummary(base);
 
   const extractText = (value) => {
     if (value == null) {
@@ -319,6 +329,9 @@ const sanitizeData = (payload) => {
       phones: Array.isArray(contact.phones) ? contact.phones : [],
       urls: Array.isArray(contact.urls) ? contact.urls : [],
     },
+    layout: {
+      sectionOrder: normalizeReviewOrder(layout.sectionOrder),
+    },
     themes: {
       options: themeOptions,
       selected: selectedTheme,
@@ -402,11 +415,15 @@ export const usePortfolioStore = create((set, get) => ({
   setParsedData: (payload) => {
     const sanitized = sanitizeData(payload);
     const nextMeta = extractMeta(sanitized.meta, get().meta);
-    const dataWithMeta = applyMetaToData(sanitized, nextMeta);
+    // derive review order from payload layout if present
+    const nextOrder = normalizeReviewOrder(sanitized.layout?.sectionOrder);
+    const withOrder = { ...sanitized, layout: { sectionOrder: nextOrder } };
+    const dataWithMeta = applyMetaToData(withOrder, nextMeta);
     writeSession(nextMeta);
     set({
       data: dataWithMeta,
       meta: nextMeta,
+      reviewOrder: nextOrder,
       uploadStatus: 'parsed',
       dirty: false,
       saveState: 'idle',
@@ -417,9 +434,12 @@ export const usePortfolioStore = create((set, get) => ({
     const previous = get().data;
     const candidate = typeof updater === 'function' ? updater(previous) : updater;
     const sanitized = sanitizeData(candidate);
+    // keep layout.sectionOrder in sync
+    const nextOrder = normalizeReviewOrder(sanitized.layout?.sectionOrder);
+    sanitized.layout = { sectionOrder: nextOrder };
     const nextMeta = extractMeta(sanitized.meta, get().meta);
     const dataWithMeta = applyMetaToData(sanitized, nextMeta);
-    set({ data: dataWithMeta, meta: nextMeta, dirty: true });
+    set({ data: dataWithMeta, meta: nextMeta, reviewOrder: nextOrder, dirty: true });
   },
   updateTheme: (themeId) => {
     const { data } = get();
@@ -436,9 +456,9 @@ export const usePortfolioStore = create((set, get) => ({
     set((state) => {
       const current = normalizeReviewOrder(state.reviewOrder);
       const candidate = typeof updater === 'function' ? updater(current) : updater;
-      return {
-        reviewOrder: normalizeReviewOrder(candidate),
-      };
+      const next = normalizeReviewOrder(candidate);
+      const nextData = { ...state.data, layout: { sectionOrder: next } };
+      return { reviewOrder: next, data: nextData, dirty: true };
     });
   },
   setMeta: (updater) => {

@@ -87,12 +87,14 @@ export function PreviewPanel() {
     return '';
   }, [meta?.slug, meta?.visibility]);
 
+  const reviewOrder = usePortfolioStore((state) => state.reviewOrder);
+
   return (
     <aside
       className="sticky top-10 hidden h-fit rounded-3xl border border-slate-700/70 bg-slate-900/70 p-8 shadow-card lg:block"
       aria-label="Live portfolio preview"
     >
-      <PortfolioPreview data={data} />
+  <PortfolioPreview data={{ ...data, layout: { sectionOrder: reviewOrder } }} />
 
       <footer className="mt-6 space-y-3 rounded-2xl bg-slate-900/80 px-5 py-4">
         <div className="flex items-start justify-between gap-4">
