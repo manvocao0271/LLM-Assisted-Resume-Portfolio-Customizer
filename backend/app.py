@@ -105,6 +105,16 @@ def _safe_list(value: Any) -> list[str]:
     return []
 
 
+def _split_lines(values: Any) -> list[str]:
+    lines: list[str] = []
+    for raw in _safe_list(values):
+        for part in str(raw).replace("\r", "\n").split("\n"):
+            cleaned = part.strip().lstrip("•·-•")
+            if cleaned:
+                lines.append(cleaned)
+    return lines
+
+
 def _collapse_summary(summary: Any) -> str:
     if isinstance(summary, str):
         return summary
@@ -172,12 +182,23 @@ def _project_entries(raw_entries: Any) -> list[Dict[str, Any]]:
     for item in raw_entries:
         if not isinstance(item, dict):
             continue
+        bullets = _split_lines(
+            item.get("bullets")
+            or item.get("highlights")
+            or item.get("achievements")
+            or item.get("details")
+        )
+        description_source = item.get("summary") or item.get("description") or ""
+        description_text = str(description_source).strip()
+        if not description_text and bullets:
+            description_text = "\n".join(bullets)
         entries.append(
             {
                 "id": f"proj-{uuid.uuid4().hex[:8]}",
                 "name": str(item.get("title") or item.get("name") or ""),
-                "description": str(item.get("summary") or item.get("description") or ""),
+                "description": description_text,
                 "link": str(item.get("url") or item.get("link") or ""),
+                "bullets": bullets,
             }
         )
     return entries
