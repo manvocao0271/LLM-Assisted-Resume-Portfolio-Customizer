@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+export const REVIEW_SECTION_KEYS = ['summary', 'contact', 'experience', 'projects', 'education', 'skills'];
+
 const THEME_OPTIONS = [
   { id: 'aurora', name: 'Aurora', primary: '#42a5f5', accent: '#f472b6' },
   { id: 'midnight', name: 'Midnight', primary: '#6366f1', accent: '#22d3ee' },
@@ -39,6 +41,25 @@ const initialMeta = {
   visibility: 'private',
   slug: '',
   publishedAt: null,
+};
+
+const normalizeReviewOrder = (order) => {
+  const nextOrder = Array.isArray(order) ? order.filter((key) => typeof key === 'string') : [];
+  const unique = [];
+
+  for (const key of nextOrder) {
+    if (REVIEW_SECTION_KEYS.includes(key) && !unique.includes(key)) {
+      unique.push(key);
+    }
+  }
+
+  for (const key of REVIEW_SECTION_KEYS) {
+    if (!unique.includes(key)) {
+      unique.push(key);
+    }
+  }
+
+  return unique;
 };
 
 const generateSummary = (payload) => {
@@ -365,6 +386,7 @@ export const usePortfolioStore = create((set, get) => ({
   step: 0,
   data: initialData,
   meta: initialMeta,
+  reviewOrder: REVIEW_SECTION_KEYS.slice(),
   uploadStatus: 'idle',
   saveState: 'idle',
   loadState: 'idle',
@@ -409,6 +431,15 @@ export const usePortfolioStore = create((set, get) => ({
     const nextMeta = extractMeta(sanitized.meta, get().meta);
     const dataWithMeta = applyMetaToData(sanitized, nextMeta);
     set({ data: dataWithMeta, meta: nextMeta, dirty: true });
+  },
+  setReviewOrder: (updater) => {
+    set((state) => {
+      const current = normalizeReviewOrder(state.reviewOrder);
+      const candidate = typeof updater === 'function' ? updater(current) : updater;
+      return {
+        reviewOrder: normalizeReviewOrder(candidate),
+      };
+    });
   },
   setMeta: (updater) => {
     const previous = get().meta;
