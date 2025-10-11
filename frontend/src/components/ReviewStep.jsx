@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react';
+import { useMemo, useRef, useEffect, useState } from 'react';
 
 import { usePortfolioStore, REVIEW_SECTION_KEYS } from '../store/usePortfolioStore.js';
 
@@ -76,34 +76,43 @@ export function ReviewStep() {
   const hasEducation = education.length > 0;
   const hasSkills = skills.length > 0;
 
-  const handleSummaryChange = (event) => {
-    const value = event.target.value;
-    updateData((previous) => ({ ...previous, summary: value }));
-  };
+  // Summary local buffer
+  const [summaryValue, setSummaryValue] = useState(data.summary || '');
+  useEffect(() => {
+    setSummaryValue(data.summary || '');
+  }, [data.summary]);
 
-  const handleSkillsChange = (event) => {
-    const nextSkills = event.target.value
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
-    updateData((previous) => ({ ...previous, skills: nextSkills }));
-  };
+  // Local buffer for skills to avoid stripping spaces/commas while typing
+  const [skillsValue, setSkillsValue] = useState((Array.isArray(skills) ? skills : []).join(', '));
+  useEffect(() => {
+    // Keep local buffer in sync when store.skills changes externally (e.g., after upload)
+    const joined = (Array.isArray(skills) ? skills : []).join(', ');
+    setSkillsValue(joined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skills.join('|')]);
 
-  const handleContactChange = (field) => (event) => {
-    const values = event.target.value
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean);
+  // Contact local buffers
+  const [emailsValue, setEmailsValue] = useState(emails.join(', '));
+  const [phonesValue, setPhonesValue] = useState(phones.join(', '));
+  const [urlsValue, setUrlsValue] = useState(urls.join('\n'));
+  useEffect(() => setEmailsValue(emails.join(', ')), [emails.join('|')]);
+  useEffect(() => setPhonesValue(phones.join(', ')), [phones.join('|')]);
+  useEffect(() => setUrlsValue(urls.join('\n')), [urls.join('|')]);
 
-    updateData((previous) => ({
-      ...previous,
-      contact: {
-        emails: field === 'emails' ? values : previous.contact?.emails ?? emails,
-        phones: field === 'phones' ? values : previous.contact?.phones ?? phones,
-        urls: field === 'urls' ? values : previous.contact?.urls ?? urls,
-      },
-    }));
-  };
+  // Experience bullets local buffers (per entry)
+  const [expBuffers, setExpBuffers] = useState({});
+  useEffect(() => {
+    // Initialize buffers for any new experience entries
+    setExpBuffers((prev) => {
+      const next = { ...prev };
+      for (const item of experience) {
+        if (next[item.id] === undefined) {
+          next[item.id] = (Array.isArray(item.bullets) ? item.bullets : []).join('\n');
+        }
+      }
+      return next;
+    });
+  }, [experience.map((e) => e.id).join('|')]);
 
   const renderExperienceContent = () => (
     <>
@@ -147,13 +156,20 @@ export function ReviewStep() {
           <div>
             <label className="text-xs uppercase tracking-widest text-slate-400">Highlights (one per line)</label>
             <AutoResizeTextarea
-              value={(Array.isArray(item.bullets) ? item.bullets : []).join('\n')}
+              value={expBuffers[item.id] ?? (Array.isArray(item.bullets) ? item.bullets : []).join('\n')}
               onChange={(event) => {
-                const value = event.target.value.split('\n').map((line) => line.trim()).filter(Boolean);
+                const raw = event.target.value;
+                setExpBuffers((prev) => ({ ...prev, [item.id]: raw }));
+              }}
+              onBlur={() => {
+                const lines = String(expBuffers[item.id] ?? '')
+                  .split('\n')
+                  .map((line) => line.replace(/^[\s•·\-\u2022\u2219]+/, '').trim())
+                  .filter(Boolean);
                 updateData((previous) => ({
                   ...previous,
                   experience: (Array.isArray(previous.experience) ? previous.experience : []).map((entry) =>
-                    entry.id === item.id ? { ...entry, bullets: value } : entry,
+                    entry.id === item.id ? { ...entry, bullets: lines } : entry,
                   ),
                 }));
               }}
@@ -184,12 +200,28 @@ export function ReviewStep() {
       return [];
     };
 
+    // Project highlights local buffers (per project)
+    const [projBuffers, setProjBuffers] = useState({});
+    useEffect(() => {
+      setProjBuffers((prev) => {
+        const next = { ...prev };
+        for (const p of projects) {
+          if (next[p.id] === undefined) {
+            const bulletLines = normalizeLines(p.bullets);
+            const fallbackLines = bulletLines.length ? bulletLines : normalizeLines(p.description);
+            next[p.id] = fallbackLines.join('\n');
+          }
+        }
+        return next;
+      });
+    }, [projects.map((p) => p.id).join('|')]);
+
     return (
       <>
         {projects.map((project) => {
           const bulletLines = normalizeLines(project.bullets);
           const fallbackLines = bulletLines.length ? bulletLines : normalizeLines(project.description);
-          const textareaValue = fallbackLines.join('\n');
+          const textareaValue = projBuffers[project.id] ?? fallbackLines.join('\n');
 
           return (
             <article key={project.id} className="space-y-2 rounded-xl border border-slate-700/60 bg-slate-900/40 p-4">
@@ -214,7 +246,11 @@ export function ReviewStep() {
                 <AutoResizeTextarea
                   value={textareaValue}
                   onChange={(event) => {
-                    const lines = event.target.value
+                    const raw = event.target.value;
+                    setProjBuffers((prev) => ({ ...prev, [project.id]: raw }));
+                  }}
+                  onBlur={() => {
+                    const lines = String(projBuffers[project.id] ?? '')
                       .split('\n')
                       .map((line) => line.replace(/^[\s•·\-\u2022\u2219]+/, '').trim())
                       .filter(Boolean);
@@ -317,8 +353,18 @@ export function ReviewStep() {
         <label className="flex flex-col gap-2">
           <span className="text-xs uppercase tracking-widest text-slate-400">Emails (comma separated)</span>
           <input
-            value={emails.join(', ')}
-            onChange={handleContactChange('emails')}
+            value={emailsValue}
+            onChange={(e) => setEmailsValue(e.target.value)}
+            onBlur={() => {
+              const values = emailsValue
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean);
+              updateData((previous) => ({
+                ...previous,
+                contact: { ...previous.contact, emails: values },
+              }));
+            }}
             className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
           />
         </label>
@@ -327,8 +373,18 @@ export function ReviewStep() {
         <label className="flex flex-col gap-2">
           <span className="text-xs uppercase tracking-widest text-slate-400">Phone numbers</span>
           <input
-            value={phones.join(', ')}
-            onChange={handleContactChange('phones')}
+            value={phonesValue}
+            onChange={(e) => setPhonesValue(e.target.value)}
+            onBlur={() => {
+              const values = phonesValue
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean);
+              updateData((previous) => ({
+                ...previous,
+                contact: { ...previous.contact, phones: values },
+              }));
+            }}
             className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
           />
         </label>
@@ -337,19 +393,16 @@ export function ReviewStep() {
         <label className="flex flex-col gap-2">
           <span className="text-xs uppercase tracking-widest text-slate-400">Links</span>
           <AutoResizeTextarea
-            value={urls.join('\n')}
-            onChange={(event) => {
-              const values = event.target.value
+            value={urlsValue}
+            onChange={(e) => setUrlsValue(e.target.value)}
+            onBlur={() => {
+              const values = urlsValue
                 .split('\n')
                 .map((item) => item.trim())
                 .filter(Boolean);
               updateData((previous) => ({
                 ...previous,
-                contact: {
-                  emails: previous.contact?.emails ?? emails,
-                  phones: previous.contact?.phones ?? phones,
-                  urls: values,
-                },
+                contact: { ...previous.contact, urls: values },
               }));
             }}
             className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
@@ -362,8 +415,15 @@ export function ReviewStep() {
   const renderSkillsContent = () => (
     <>
       <AutoResizeTextarea
-        value={skills.join(', ')}
-        onChange={handleSkillsChange}
+        value={skillsValue}
+        onChange={(e) => setSkillsValue(e.target.value)}
+        onBlur={() => {
+          const nextSkills = skillsValue
+            .split(/[\n,]/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+          updateData((previous) => ({ ...previous, skills: nextSkills }));
+        }}
         className="w-full rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
       />
       <p className="text-xs text-slate-500">Separate skills with commas. These power the tag cloud on your portfolio.</p>
@@ -395,8 +455,9 @@ export function ReviewStep() {
       shouldRender: true,
       render: () => (
         <AutoResizeTextarea
-          value={data.summary || ''}
-          onChange={handleSummaryChange}
+          value={summaryValue}
+          onChange={(e) => setSummaryValue(e.target.value)}
+          onBlur={() => updateData((previous) => ({ ...previous, summary: summaryValue }))}
           className="w-full rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
         />
       ),
