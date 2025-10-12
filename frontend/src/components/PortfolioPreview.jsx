@@ -29,11 +29,41 @@ export function PortfolioPreview({ data }) {
     ? data.layout.sectionOrder
     : ORDER_KEYS;
 
-  const contactChips = [
-    ...(Array.isArray(contact.emails) ? contact.emails : []),
-    ...(Array.isArray(contact.phones) ? contact.phones : []),
-    ...(Array.isArray(contact.urls) ? contact.urls : []),
-  ];
+  const contactChips = (() => {
+    const result = [];
+    const emails = Array.isArray(contact.emails) ? contact.emails : [];
+    const phones = Array.isArray(contact.phones) ? contact.phones : [];
+    const urls = Array.isArray(contact.urls) ? contact.urls : [];
+
+    const isEmail = (v) => /^(?:[^\s@]+)@(?:[^\s@]+)\.[^\s@]+$/.test(String(v).trim());
+    const isHttps = (v) => {
+      try {
+        const u = new URL(String(v).trim());
+        return u.protocol === 'https:' || u.protocol === 'http:'; // allow http just in case
+      } catch {
+        return false;
+      }
+    };
+    const isPhoneLike = (v) => /^[+()\d][\d\s().-]{6,}$/.test(String(v).trim());
+    const toTelHref = (v) => `tel:${String(v).replace(/[^+\d]/g, '')}`;
+
+    for (const e of emails) {
+      const label = String(e).trim();
+      if (!label) continue;
+      result.push({ key: `email:${label}`, label, href: isEmail(label) ? `mailto:${label}` : undefined });
+    }
+    for (const p of phones) {
+      const label = String(p).trim();
+      if (!label) continue;
+      result.push({ key: `phone:${label}`, label, href: isPhoneLike(label) ? toTelHref(label) : undefined });
+    }
+    for (const u of urls) {
+      const label = String(u).trim();
+      if (!label) continue;
+      result.push({ key: `url:${label}`, label, href: isHttps(label) ? label : undefined });
+    }
+    return result;
+  })();
 
   return (
     <div
@@ -65,11 +95,23 @@ export function PortfolioPreview({ data }) {
         if (key === 'contact') {
           return contactChips.length > 0 ? (
             <div key="contact" className="mt-4 flex flex-wrap gap-3 text-xs text-white/70">
-              {contactChips.map((chip) => (
-                <span key={chip} className="rounded-full border border-white/40 px-3 py-1">
-                  {chip}
-                </span>
-              ))}
+              {contactChips.map((chip) =>
+                chip.href ? (
+                  <a
+                    key={chip.key}
+                    href={chip.href}
+                    target={chip.href.startsWith('http') ? '_blank' : undefined}
+                    rel={chip.href.startsWith('http') ? 'noopener noreferrer' : undefined}
+                    className="rounded-full border border-white/40 px-3 py-1 text-white/80 hover:text-white hover:border-white/60"
+                  >
+                    {chip.label}
+                  </a>
+                ) : (
+                  <span key={chip.key} className="rounded-full border border-white/40 px-3 py-1">
+                    {chip.label}
+                  </span>
+                ),
+              )}
             </div>
           ) : null;
         }

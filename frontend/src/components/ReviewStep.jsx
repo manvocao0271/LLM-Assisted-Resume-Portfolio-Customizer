@@ -70,7 +70,7 @@ export function ReviewStep() {
   const phones = Array.isArray(contact.phones) ? contact.phones : [];
   const urls = Array.isArray(contact.urls) ? contact.urls : [];
 
-  const hasContact = emails.length > 0 || phones.length > 0 || urls.length > 0;
+  const hasContact = true; // Always show contact editors so users can add details
   const hasExperience = experience.length > 0;
   const hasProjects = projects.length > 0;
   const hasEducation = education.length > 0;
@@ -91,13 +91,29 @@ export function ReviewStep() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skills.join('|')]);
 
-  // Contact local buffers
-  const [emailsValue, setEmailsValue] = useState(emails.join(', '));
-  const [phonesValue, setPhonesValue] = useState(phones.join(', '));
-  const [urlsValue, setUrlsValue] = useState(urls.join('\n'));
-  useEffect(() => setEmailsValue(emails.join(', ')), [emails.join('|')]);
-  useEffect(() => setPhonesValue(phones.join(', ')), [phones.join('|')]);
-  useEffect(() => setUrlsValue(urls.join('\n')), [urls.join('|')]);
+  // Validator for https URLs
+  const isValidHttpsUrl = (value) => {
+    try {
+      const u = new URL(value);
+      return u.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  };
+
+  // Contact local buffers (single email, single phone, and dynamic URL inputs)
+  const [emailValue, setEmailValue] = useState(emails[0] || '');
+  const [phoneValue, setPhoneValue] = useState(phones[0] || '');
+  const [urlInputs, setUrlInputs] = useState(() => {
+    const initial = Array.isArray(urls) ? urls.filter((u) => isValidHttpsUrl(u)) : [];
+    return initial.length ? initial : [''];
+  });
+  useEffect(() => setEmailValue(emails[0] || ''), [emails[0] || '']);
+  useEffect(() => setPhoneValue(phones[0] || ''), [phones[0] || '']);
+  useEffect(() => {
+    const next = Array.isArray(urls) ? urls.filter((u) => isValidHttpsUrl(u)) : [];
+    setUrlInputs(next.length ? next : ['']);
+  }, [urls.map?.((u) => u || '').join('|') || '']);
 
   // Experience bullets local buffers (per entry)
   const [expBuffers, setExpBuffers] = useState({});
@@ -348,68 +364,104 @@ export function ReviewStep() {
   );
 
   const renderContactContent = () => (
-    <>
-      {emails.length > 0 && (
-        <label className="flex flex-col gap-2">
-          <span className="text-xs uppercase tracking-widest text-slate-400">Emails (comma separated)</span>
-          <input
-            value={emailsValue}
-            onChange={(e) => setEmailsValue(e.target.value)}
-            onBlur={() => {
-              const values = emailsValue
-                .split(',')
-                .map((item) => item.trim())
-                .filter(Boolean);
-              updateData((previous) => ({
-                ...previous,
-                contact: { ...previous.contact, emails: values },
-              }));
-            }}
-            className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
-          />
-        </label>
-      )}
-      {phones.length > 0 && (
-        <label className="flex flex-col gap-2">
-          <span className="text-xs uppercase tracking-widest text-slate-400">Phone numbers</span>
-          <input
-            value={phonesValue}
-            onChange={(e) => setPhonesValue(e.target.value)}
-            onBlur={() => {
-              const values = phonesValue
-                .split(',')
-                .map((item) => item.trim())
-                .filter(Boolean);
-              updateData((previous) => ({
-                ...previous,
-                contact: { ...previous.contact, phones: values },
-              }));
-            }}
-            className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
-          />
-        </label>
-      )}
-      {urls.length > 0 && (
-        <label className="flex flex-col gap-2">
-          <span className="text-xs uppercase tracking-widest text-slate-400">Links</span>
-          <AutoResizeTextarea
-            value={urlsValue}
-            onChange={(e) => setUrlsValue(e.target.value)}
-            onBlur={() => {
-              const values = urlsValue
-                .split('\n')
-                .map((item) => item.trim())
-                .filter(Boolean);
-              updateData((previous) => ({
-                ...previous,
-                contact: { ...previous.contact, urls: values },
-              }));
-            }}
-            className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
-          />
-        </label>
-      )}
-    </>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <label className="flex flex-col gap-2 sm:col-span-1">
+        <span className="text-xs uppercase tracking-widest text-slate-400">Email</span>
+        <input
+          type="email"
+          value={emailValue}
+          onChange={(e) => setEmailValue(e.target.value)}
+          onBlur={() => {
+            const val = emailValue.trim();
+            updateData((previous) => ({
+              ...previous,
+              contact: { ...previous.contact, emails: val ? [val] : [] },
+            }));
+          }}
+          placeholder="jane.doe@example.com"
+          className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
+        />
+      </label>
+
+      <label className="flex flex-col gap-2 sm:col-span-1">
+        <span className="text-xs uppercase tracking-widest text-slate-400">Phone</span>
+        <input
+          type="tel"
+          value={phoneValue}
+          onChange={(e) => setPhoneValue(e.target.value)}
+          onBlur={() => {
+            const val = phoneValue.trim();
+            updateData((previous) => ({
+              ...previous,
+              contact: { ...previous.contact, phones: val ? [val] : [] },
+            }));
+          }}
+          placeholder="(555) 123-4567"
+          className="rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
+        />
+      </label>
+
+      <div className="sm:col-span-2">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-xs uppercase tracking-widest text-slate-400">Links (HTTPS)</span>
+          <button
+            type="button"
+            onClick={() => setUrlInputs((prev) => [...prev, ''])}
+            className="rounded-md border border-slate-600 bg-slate-900/60 px-2 py-1 text-xs font-medium text-slate-300 hover:border-brand-400 hover:text-brand-300"
+          >
+            + Add URL
+          </button>
+        </div>
+        <div className="space-y-2">
+          {urlInputs.map((val, idx) => (
+            <div key={idx} className="flex items-center gap-2">
+              <input
+                type="url"
+                value={val}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setUrlInputs((prev) => {
+                    const next = [...prev];
+                    next[idx] = v;
+                    return next;
+                  });
+                }}
+                onBlur={() => {
+                  const values = urlInputs
+                    .map((u) => u.trim())
+                    .filter((u) => u.length > 0 && isValidHttpsUrl(u));
+                  updateData((previous) => ({
+                    ...previous,
+                    contact: { ...previous.contact, urls: values },
+                  }));
+                }}
+                placeholder={idx === 0 ? 'https://www.linkedin.com/in/username' : idx === 1 ? 'https://github.com/username' : 'https://your-site.com'}
+                className="w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setUrlInputs((prev) => {
+                    const next = prev.filter((_, i) => i !== idx);
+                    // Also update store after removal
+                    const values = next.map((u) => u.trim()).filter((u) => u.length > 0 && isValidHttpsUrl(u));
+                    updateData((previous) => ({
+                      ...previous,
+                      contact: { ...previous.contact, urls: values },
+                    }));
+                    return next.length ? next : [''];
+                  });
+                }}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-600 text-slate-300 hover:border-rose-400 hover:text-rose-300"
+                aria-label={`Remove URL #${idx + 1}`}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 
   const renderSkillsContent = () => (
@@ -465,8 +517,8 @@ export function ReviewStep() {
     {
       key: 'contact',
       title: 'Contact details',
-      description: 'Keep emails, phone numbers, and portfolio URLs up to date.',
-      shouldRender: hasContact,
+      description: 'Add your email, phone, and up to three social/portfolio links.',
+      shouldRender: true,
       render: renderContactContent,
     },
     {

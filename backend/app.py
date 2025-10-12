@@ -206,9 +206,62 @@ def _project_entries(raw_entries: Any) -> list[Dict[str, Any]]:
 
 def _normalized_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
     contact = parsed.get("contact") if isinstance(parsed.get("contact"), dict) else {}
+
+    # Start with common keys
     emails = _safe_list(contact.get("emails") if contact else parsed.get("emails"))
     phones = _safe_list(contact.get("phones") if contact else parsed.get("phones"))
     urls = _safe_list(contact.get("urls") if contact else parsed.get("urls"))
+
+    # Consider alternate keys sometimes returned by models
+    emails += _safe_list(parsed.get("email"))
+    phones += _safe_list(parsed.get("phone"))
+    phones += _safe_list(parsed.get("phone_number"))
+    urls += _safe_list(parsed.get("links"))
+    urls += _safe_list(parsed.get("profiles"))
+    urls += _safe_list(parsed.get("websites"))
+
+    # Recover contact details from embedded PDF links when available
+    embedded_links = parsed.get("embedded_links") or []
+    for link in embedded_links if isinstance(embedded_links, list) else []:
+        try:
+            href = str(link.get("url", "")).strip()
+        except Exception:
+            continue
+        if not href:
+            continue
+        lower = href.lower()
+        if lower.startswith("mailto:"):
+            addr = href.split(":", 1)[1].split("?")[0].strip()
+            if addr:
+                emails.append(addr)
+        elif lower.startswith("tel:"):
+            num = href.split(":", 1)[1].split("?")[0].strip()
+            if num:
+                phones.append(num)
+        else:
+            urls.append(href)
+
+    # De-duplicate while preserving order
+    def _dedupe(items: list[str], key=lambda s: s.strip().lower()):
+        seen: set[str] = set()
+        result: list[str] = []
+        for it in items:
+            if not isinstance(it, str):
+                continue
+            k = key(it)
+            if not k or k in seen:
+                continue
+            seen.add(k)
+            result.append(it.strip())
+        return result
+
+    # For phones, dedupe by digits only to avoid format variations
+    def _digits_only(s: str) -> str:
+        return "".join(ch for ch in s if ch.isdigit())
+
+    emails = _dedupe(emails)
+    phones = _dedupe(phones, key=lambda s: _digits_only(str(s)))
+    urls = _dedupe(urls)
 
     payload = {
         "name": parsed.get("name") or "",
@@ -222,7 +275,7 @@ def _normalized_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
             "phones": phones,
             "urls": urls,
         },
-        "embedded_links": parsed.get("embedded_links") or [],
+    "embedded_links": parsed.get("embedded_links") or [],
         "themes": {
             "selected": parsed.get("theme") or THEME_OPTIONS[0]["id"],
             "options": THEME_OPTIONS,
