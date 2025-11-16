@@ -2,6 +2,32 @@
 
 Single-file CLI that converts a resume PDF into structured JSON with the help of any OpenAI-compatible LLM.
 
+## Project Summary
+
+### Introduction & Overview
+ResumeParser transforms traditional résumés into structured data and polished portfolio experiences. The project combines a CLI parser, a FastAPI backend, and a React-based dashboard so users can upload a PDF, normalize its contents, tweak every section, and preview the final portfolio before publishing.
+
+### Main Goals & Guiding Questions
+- How can we reliably extract résumé content using LLMs without sacrificing determinism or safety?
+- What editing workflows help users reconcile raw parser output with their preferred portfolio narrative?
+- Can we offer generative design assistance while preventing arbitrary code execution in the browser?
+
+### Background & Context
+Building public-facing portfolios from résumés usually requires manual reformatting. This project started as a CLI experiment to coerce LLMs into stable JSON output, then grew into a full-stack prototype that keeps human control at every step: section ordering, contact cleanup, draft previews, and publish-time slug management.
+
+### Methods & Tools
+- **Parsing & Normalization:** Python 3.12, `llm_label_resume.py`, PyPDF2 link extraction, and environment-driven OpenAI-compatible providers.
+- **Backend Services:** FastAPI, async SQLAlchemy with Alembic migrations, Supabase Storage integration, and deterministic schema generation for prompts.
+- **Frontend Experience:** React 18 with Vite, Tailwind CSS, Zustand state store, and a SchemaRenderer that only renders vetted UI primitives.
+- **Dev Ergonomics:** Vite proxying, reusable npm scripts, and dry-run modes for both the parser and backend to support local testing.
+
+### Findings & Outcomes
+- Locked-in JSON normalization ensures summaries, contact details, and project bullet points stay consistent across CLI, API, and UI.
+- Review & Customize steps now feature buffered inputs, HTTPS-only link sanitization, and up/down section reordering that matches the public preview order.
+- A discrete “Preview draft” flow saves the latest edits, opens `/preview/:slug`, and safeguards draft access by requiring both slug and portfolio ID.
+- The experimental schema-first generator translates prompts into deterministic UI specs, offering creative layouts without allowing arbitrary HTML or scripts.
+- Documentation, build scripts, and environment scaffolding let contributors stand up the full stack quickly (Python backend, React frontend, optional Supabase services).
+
 ## Project status
 
 What’s already working and what’s left for a minimal publishable MVP.
@@ -231,6 +257,45 @@ During local development a Vite dev proxy forwards `/api/*` calls to `http://loc
   - Inspect the `POST /api/resumes` response — the `data.meta.storage` block should list `bucket`, `path`, and a `signed_url`.
   - Refresh the Supabase dashboard (`Storage → resumes`) and confirm the uploaded file appears.
 
+### Troubleshooting Supabase uploads
+
+If you see the frontend warning **"Failed to persist PDF to storage"**, the backend has already routed the PDF to Supabase and the Storage upload call is raising a `Supabase upload failed for …` exception. A few checks usually clear it up:
+
+1. **Double-check the credentials:** make sure `SUPABASE_URL` still points to your project, `SUPABASE_SERVICE_ROLE_KEY` is the current service-role key (rotate it in Supabase if you regenerated keys), and `SUPABASE_RESUME_BUCKET` exactly matches the bucket name you created (`resumes` by default). Restart the backend after changing `.env` so the new values are loaded.
+2. **Confirm the bucket exists/permissioned:** the service role key is required to write to private buckets.
+3. **Reproduce the failure locally:** create a quick PDF and invoke the upload helper directly to isolate network errors.
+   ```zsh
+   python3 - <<'PY'
+   from PyPDF2 import PdfWriter
+   writer = PdfWriter()
+   writer.add_blank_page(width=612, height=792)
+   with open('sample_resume.pdf', 'wb') as out:
+     writer.write(out)
+   PY
+
+  ./.venv/bin/python - <<'PY'
+   import asyncio
+   from pathlib import Path
+   from dotenv import load_dotenv
+
+   load_dotenv('.env')
+   from backend import storage
+
+   async def main():
+     try:
+       asset = await storage.upload_resume_pdf(Path('sample_resume.pdf'), 'sample_resume.pdf')
+       print('Uploaded asset', asset)
+     except Exception as exc:
+       raise SystemExit(f'Supabase upload failed: {exc}')
+
+   asyncio.run(main())
+   PY
+   ```
+   A successful run means your Supabase project is configured correctly; any HTTP error in that script (401/403/404) points at an invalid key or bucket.
+4. **Check the backend log:** while uvicorn is running, look for the `Supabase upload failed for ...` stack trace. It includes the Supabase status code and payload so you know whether you’re hitting authentication, bucket permissions, or payload size limits.
+
+Once the service-role key and bucket are validated, the frontend upload flow should stop returning the red error message and you’ll see signed URLs appended to `data.meta.storage` again.
+
 > Troubleshooting: if the backend logs `Supabase SDK not installed; storage integration disabled`, reinstall the requirements or run `pip install supabase` inside your virtualenv, then restart `uvicorn`.
 
 ## Development quickstart
@@ -263,6 +328,56 @@ The frontend will proxy `/api/*` to `http://localhost:8000`. To point at a remot
 ```ini
 VITE_API_BASE_URL=https://your-api.example.com
 ```
+
+## Generative Portfolio (Experimental Design)
+
+This opt-in feature turns a short prompt into a presentational portfolio layout using a safe, schema-first approach. The backend returns a constrained UI specification (uiSpec) that the frontend renders with vetted components—no arbitrary code or HTML execution.
+
+Goals
+- No arbitrary code execution in the browser; only whitelisted components are rendered.
+- Fast and deterministic preview; no external calls required after spec is returned.
+- Safe defaults; if spec is missing/invalid, the app falls back to the theme-based renderer.
+
+API contract (draft)
+- POST /api/generative/preview
+  - Request: { prompt: string, data?: PortfolioData }
+  - Response: { uiSpec: SchemaSpec, info: { version: string, generatedAt: string } }
+- PUT /api/portfolios/{id}
+  - May include an optional meta.generatedSpec to persist a chosen spec for the public page (future).
+
+SchemaSpec v0 (bounded primitives)
+- page: { layout: "default" | "minimal" }
+- sections: Array<Section>
+- Section
+  - type: "hero" | "heading" | "paragraph" | "list" | "grid" | "contact"
+  - props: strictly typed, e.g. list: { title?: string, variant?: "tags"|"bullets", items: Array<string|{title:string,body?:string}> }
+
+Frontend plan (feature-flagged)
+- Generate Design panel in Customize with:
+  - Prompt textarea (e.g., "Minimal, airy, emphasis on projects")
+  - Generate button → POST preview → store uiSpec in state
+  - Inline preview via SchemaRenderer
+  - History (last specs) and Revert to Theme (future)
+
+Renderer (SchemaRenderer)
+- Tailwind-only building blocks:
+  - Hero: name + summary
+  - Lists: skills as tags or bullets; experience/project items with title/body
+  - Grid: project cards with optional https link
+  - Contact: mailto/tel/https chips
+  - No iframes, scripts, style tags, or raw HTML rendering
+
+Safety & guardrails
+- Drop external URLs that aren’t https.
+- Clamp array sizes (e.g., max 12 items per list/grid) and truncate long text.
+- Validate spec with Pydantic (backend) and Zod/prop checks (frontend).
+- If validation fails, show a friendly error and fall back to theme renderer.
+
+Milestones
+1) MVP: Deterministic spec from prompt + current data; preview only (this PR).
+2) Persist spec on publish (meta.generatedSpec) and render on the public page.
+3) Add more section types (quote, stats, timeline) and color variants.
+4) Optional: server-side spec templating for static export.
 
 ## Portfolio Generator Roadmap
 
