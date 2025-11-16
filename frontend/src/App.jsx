@@ -5,7 +5,6 @@ import { UploadStep } from './components/UploadStep.jsx';
 import { ReviewStep } from './components/ReviewStep.jsx';
 import { CustomizeStep } from './components/CustomizeStep.jsx';
 import { StepNavigation } from './components/StepNavigation.jsx';
-import { PreviewPanel } from './components/PreviewPanel.jsx';
 import { usePortfolioStore } from './store/usePortfolioStore.js';
 
 const steps = [UploadStep, ReviewStep, CustomizeStep];
@@ -37,9 +36,6 @@ export default function App() {
             <ActiveStepComponent />
           </div>
           <StepNavigation />
-        </div>
-        <div className="lg:w-[420px]">
-          <PreviewPanel />
         </div>
       </div>
     </div>

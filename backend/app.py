@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
+from uuid import UUID
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,7 +24,13 @@ if str(BASE_DIR) not in sys.path:
 from backend import storage
 from backend.database import get_session, init_models_if_needed
 from backend.models import PortfolioDraft, ResumeDocument
-from backend.schemas import PortfolioUpdatePayload
+from backend.schemas import (
+    PortfolioUpdatePayload,
+    GenerativePreviewRequest,
+    GenerativePreviewResponse,
+    SchemaSpec,
+    SchemaSection,
+)
 from llm_label_resume import label_with_llm
 
 MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024  # 8 MB demo guard
@@ -576,6 +583,141 @@ async def read_portfolio_by_slug(
     return {"data": content}
 
 
+@app.get("/api/portfolios/preview/{slug}")
+async def read_portfolio_draft_preview(
+    slug: str,
+    portfolio_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> Dict[str, Any]:
+    """Draft preview by slug + id. Returns content regardless of publish/visibility.
+
+    This endpoint is intended for client-side previews before publishing. It requires both
+    slug and portfolio_id to avoid leaking unrelated drafts.
+    """
+    result = await session.execute(
+        select(PortfolioDraft).where(
+            PortfolioDraft.slug == slug,
+            PortfolioDraft.id == portfolio_id,
+        )
+    )
+    portfolio = result.scalar_one_or_none()
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found.")
+    content = copy.deepcopy(portfolio.content)
+    resume = await session.get(ResumeDocument, portfolio.resume_id)
+    await _apply_storage_metadata_from_resume(resume, content)
+    return {"data": content}
+
+
 @app.get("/health", tags=["meta"])
 async def healthcheck() -> Dict[str, str]:
     return {"status": "ok"}
+
+
+# -------- Generative preview (experimental, safe/schema-first) --------
+
+def _truncate(s: str, max_len: int = 280) -> str:
+    s = (s or "").strip()
+    return s[:max_len]
+
+
+def _deterministic_spec_from_prompt(prompt: str, data: Dict[str, Any]) -> SchemaSpec:
+    """Produce a constrained UI schema without external calls.
+
+    The spec is intentionally simple and safe. It never returns arbitrary code or HTML.
+    """
+    name = str(data.get("name") or "").strip()
+    summary = str(data.get("summary") or "").strip()
+    skills = [str(s) for s in (data.get("skills") or []) if str(s).strip()]
+    projects = [p for p in (data.get("projects") or []) if isinstance(p, dict)]
+    experience = [e for e in (data.get("experience") or []) if isinstance(e, dict)]
+    contact = data.get("contact") or {}
+
+    # Choose a lightweight layout based on a few prompt keywords
+    p = prompt.lower()
+    emphasize_projects = any(k in p for k in ["project", "work", "showcase"])
+    minimal = any(k in p for k in ["minimal", "clean", "airy", "simple"]) 
+
+    sections: list[SchemaSection] = []
+
+    # Hero
+    sections.append(SchemaSection(type="hero", props={
+        "title": _truncate(name or "Your Name"),
+        "subtitle": _truncate(summary or "Professional summary goes here."),
+    }))
+
+    # Skills (compact when minimal)
+    if skills:
+        sections.append(SchemaSection(type="list", props={
+            "title": "Skills",
+            "variant": "tags" if minimal else "bullets",
+            "items": skills[:12],
+        }))
+
+    # Projects first when emphasized
+    def project_sections() -> list[SchemaSection]:
+        cards = []
+        for proj in projects[:6]:
+            cards.append({
+                "title": _truncate(str(proj.get("name") or "Project"), 80),
+                "body": _truncate(str(proj.get("description") or ""), 220),
+                "link": str(proj.get("link") or ""),
+            })
+        if not cards:
+            return []
+        return [SchemaSection(type="grid", props={
+            "title": "Projects",
+            "items": cards,
+            "columns": 2 if minimal else 3,
+        })]
+
+    def experience_sections() -> list[SchemaSection]:
+        items = []
+        for e in experience[:6]:
+            head = " ".join([
+                str(e.get("role") or "").strip(),
+                "·" if e.get("company") else "",
+                str(e.get("company") or "").strip(),
+            ]).strip()
+            body = _truncate("\n".join([b for b in (e.get("bullets") or []) if str(b).strip()]) or str(e.get("period") or ""), 220)
+            items.append({"title": _truncate(head, 120), "body": body})
+        if not items:
+            return []
+        return [SchemaSection(type="list", props={
+            "title": "Experience",
+            "variant": "bullets",
+            "items": items,
+        })]
+
+    if emphasize_projects:
+        sections.extend(project_sections())
+        sections.extend(experience_sections())
+    else:
+        sections.extend(experience_sections())
+        sections.extend(project_sections())
+
+    # Contact
+    urls = [u for u in (contact.get("urls") or []) if isinstance(u, str) and u.startswith("https://")]
+    emails = [e for e in (contact.get("emails") or []) if isinstance(e, str)]
+    phones = [ph for ph in (contact.get("phones") or []) if isinstance(ph, str)]
+    chips: list[dict[str, str]] = []
+    chips.extend([{ "type": "url", "label": u, "href": u } for u in urls[:5]])
+    chips.extend([{ "type": "email", "label": e, "href": f"mailto:{e}" } for e in emails[:2]])
+    chips.extend([{ "type": "phone", "label": ph, "href": f"tel:{ph}" } for ph in phones[:2]])
+    if chips:
+        sections.append(SchemaSection(type="contact", props={ "items": chips }))
+
+    return SchemaSpec(page={"layout": "minimal" if minimal else "default"}, sections=sections)
+
+
+@app.post("/api/generative/preview", response_model=GenerativePreviewResponse)
+async def generative_preview(payload: GenerativePreviewRequest) -> GenerativePreviewResponse:
+    # Keep it deterministic and local – no external LLM calls here.
+    spec = _deterministic_spec_from_prompt(payload.prompt, payload.data or {})
+    return GenerativePreviewResponse(
+        uiSpec=spec,
+        info={
+            "version": "0",
+            "generatedAt": datetime.now(timezone.utc).isoformat(),
+        },
+    )

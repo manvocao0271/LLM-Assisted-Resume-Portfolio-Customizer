@@ -11,13 +11,14 @@ const sections = [
 ];
 
 export function CustomizeStep() {
-  const { data, meta, updateTheme, setMeta } = usePortfolioStore((state) => ({
+  const { data, meta, updateTheme, setMeta, saveState, openPreviewDraft } = usePortfolioStore((state) => ({
     data: state.data,
     meta: state.meta,
     updateTheme: state.updateTheme,
     setMeta: state.setMeta,
+    saveState: state.saveState,
+    openPreviewDraft: state.openPreviewDraft,
   }));
-
   const handleSlugChange = (event) => {
     const rawValue = event.target.value;
     const sanitized = rawValue
@@ -90,6 +91,22 @@ export function CustomizeStep() {
             <span className="text-xs text-slate-500">Match visibility to how broadly you want to share the page.</span>
           </label>
         </div>
+        <div className="mt-6 space-y-2 rounded-2xl border border-slate-700 bg-slate-900/80 p-4">
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Preview draft</p>
+          <p className="text-sm text-slate-300">Open your current draft in a new tab once you have picked a slug.</p>
+          <button
+            type="button"
+            onClick={openPreviewDraft}
+            disabled={!meta?.slug || saveState === 'saving'}
+            className={clsx(
+              'rounded-full px-4 py-2 text-sm font-semibold text-white transition',
+              'bg-gradient-to-r from-brand-400 to-pink-500 shadow-lg shadow-brand-500/20',
+              (!meta?.slug || saveState === 'saving') ? 'opacity-60' : 'hover:from-brand-300 hover:to-pink-400'
+            )}
+          >
+            {saveState === 'saving' ? 'Saving…' : 'Preview draft'}
+          </button>
+        </div>
       </section>
 
       <section className="rounded-2xl border border-slate-700 bg-slate-800/70 p-6 shadow-card">
@@ -161,6 +178,7 @@ export function CustomizeStep() {
           ))}
         </div>
       </section>
+
     </div>
   );
 }

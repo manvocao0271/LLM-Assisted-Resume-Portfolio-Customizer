@@ -380,8 +380,13 @@ const applyMetaToData = (data, meta) => {
   return nextData;
 };
 
-const buildPutBody = (data, meta) => {
+const buildPutBody = (data, meta, generatedSpec) => {
   const payload = applyMetaToData(data, meta);
+  if (generatedSpec && typeof generatedSpec === 'object') {
+    payload.generatedSpec = generatedSpec;
+  } else if ('generatedSpec' in payload && !payload.generatedSpec) {
+    delete payload.generatedSpec;
+  }
   const body = {
     data: payload,
     status: meta.status,
@@ -400,6 +405,9 @@ export const usePortfolioStore = create((set, get) => ({
   data: initialData,
   meta: initialMeta,
   reviewOrder: REVIEW_SECTION_KEYS.slice(),
+  generatedSpec: null,
+  genState: 'idle', // idle | generating | ready | error
+  genError: '',
   uploadStatus: 'idle',
   saveState: 'idle',
   loadState: 'idle',
@@ -481,7 +489,7 @@ export const usePortfolioStore = create((set, get) => ({
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(buildPutBody(data, meta)),
+        body: JSON.stringify(buildPutBody(data, meta, get().generatedSpec)),
       });
 
       if (!response.ok) {
@@ -557,6 +565,41 @@ export const usePortfolioStore = create((set, get) => ({
   clearSession: () => {
     clearSessionStorage();
     set({ meta: initialMeta, data: sanitizeData(initialData), dirty: false, lastSavedAt: null });
+  },
+  generateDesign: async (prompt) => {
+    set({ genState: 'generating', genError: '' });
+    try {
+      const body = { prompt: String(prompt || '').slice(0, 2000), data: get().data };
+      const response = await fetch(withBaseUrl('/api/generative/preview'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Generation failed');
+      }
+      const result = await response.json();
+      const spec = result?.uiSpec || result?.data?.uiSpec || null;
+      set({ generatedSpec: spec, genState: 'ready' });
+      return true;
+    } catch (err) {
+      console.error(err);
+      set({ genState: 'error', genError: err?.message || 'Generation failed' });
+      return false;
+    }
+  },
+  openPreviewDraft: async () => {
+    const { meta } = get();
+    if (!meta.slug) return false;
+    const saved = await get().saveDraft();
+    if (!saved) return false;
+    const origin = typeof window !== 'undefined' ? window.location.origin.replace(/\/$/, '') : '';
+    const url = `${origin}/preview/${meta.slug}?portfolio_id=${encodeURIComponent(meta.portfolioId)}`;
+    if (typeof window !== 'undefined') {
+      window.open(url, '_blank', 'noopener,noreferrer');
+    }
+    return true;
   },
 }));
 
