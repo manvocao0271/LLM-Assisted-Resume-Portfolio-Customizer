@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Uuid, func
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text, Uuid, func
 from sqlalchemy.ext.mutable import MutableDict
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -25,6 +25,7 @@ class ResumeDocument(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    job_description: Mapped[Optional[str]] = mapped_column(Text)
     file_size: Mapped[Optional[int]] = mapped_column(Integer)
     storage_bucket: Mapped[Optional[str]] = mapped_column(String(128))
     storage_path: Mapped[Optional[str]] = mapped_column(String(512))

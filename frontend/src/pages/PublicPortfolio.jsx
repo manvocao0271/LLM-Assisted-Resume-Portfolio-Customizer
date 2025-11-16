@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { PortfolioPreview } from '../components/PortfolioPreview.jsx';
+import { PortfolioPreview } from '../components/NeonPortfolioPreview.jsx';
 import { resolveApiUrl } from '../store/usePortfolioStore.js';
 
 function LoadingState() {

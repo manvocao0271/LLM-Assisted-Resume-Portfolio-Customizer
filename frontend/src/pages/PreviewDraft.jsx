@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { resolveApiUrl, usePortfolioStore } from '../store/usePortfolioStore.js';
 import { SchemaRenderer } from '../components/SchemaRenderer.jsx';
-import { PortfolioPreview } from '../components/PortfolioPreview.jsx';
+import { PortfolioPreview } from '../components/NeonPortfolioPreview.jsx';
 
 export default function PreviewDraftPage() {
   const { slug } = useParams();
@@ -63,18 +63,25 @@ export default function PreviewDraftPage() {
   const { data, spec } = state;
 
   return (
-    <div className="bg-slate-900 min-h-screen text-slate-100">
+    <div className="bg-black min-h-screen text-slate-100">
       <div className="mx-auto max-w-4xl p-6">
-        <header className="mb-6 flex items-center justify-between">
-          <h1 className="text-xl font-semibold">Unpublished Preview: {data?.meta?.slug || slug}</h1>
-          <Link to="/" className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-brand-400 hover:text-brand-100">Return to editor</Link>
-        </header>
-        {/* For now, render generatedSpec via SchemaRenderer. If absent, fall back to theme preview. */}
-        {spec ? (
-          <SchemaRenderer spec={spec} />
-        ) : (
-          <PortfolioPreview data={data} />
-        )}
+        <div className="rounded-3xl border border-brand-500/30 bg-slate-950/70 p-6 shadow-card">
+          <header className="mb-6 flex items-center justify-between">
+            <h1 className="text-xl font-semibold">Unpublished Preview: {data?.meta?.slug || slug}</h1>
+            <Link
+              to="/"
+              className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-brand-400 hover:text-brand-100"
+            >
+              Return to editor
+            </Link>
+          </header>
+          {/* For now, render generatedSpec via SchemaRenderer. If absent, fall back to theme preview. */}
+          {spec ? (
+            <SchemaRenderer spec={spec} />
+          ) : (
+            <PortfolioPreview data={data} />
+          )}
+        </div>
       </div>
     </div>
   );

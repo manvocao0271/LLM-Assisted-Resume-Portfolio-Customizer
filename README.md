@@ -40,6 +40,9 @@ What’s already working and what’s left for a minimal publishable MVP.
 - FastAPI backend (`backend/app.py`)
   - `/api/parse` endpoint normalizes parser output for the UI
   - CORS configured; `/health` endpoint; root entrypoint (`app.py`) for `uvicorn app:app`
+- Automatically reruns the tailored summary generation when a job description is provided so the Review & Edit stage starts with content that references the desired role.
+- The tailored summary intentionally stays generalized for the applicant type and omits specific metrics so it can feel reusable across similar openings.
+- Experience/project highlights are also rerun through the same contextual prompt so the Review & Edit stage opens with role-aligned but still non-metric copy.
 - Persistence bootstrap
   - Async SQLAlchemy models + Alembic migrations for resumes and portfolio drafts
   - Defaults to local SQLite when `DATABASE_URL` is unset; Postgres-ready via `postgresql+asyncpg://`
@@ -47,6 +50,7 @@ What’s already working and what’s left for a minimal publishable MVP.
 - Frontend prototype (`frontend/`)
   - Vite + React + Tailwind + Zustand multi-step flow (Upload → Review → Customize → Preview)
   - Upload step retries common API base URLs and supports `VITE_API_BASE_URL`
+  - Upload step lets you paste or drop a job description (optional) so the backend can tailor the normalized data to that role.
 - Dev ergonomics
   - Vite proxy forwards `/api/*` to the backend during dev
   - Root npm scripts (`npm run setup|dev|build|preview`) delegate to the frontend package
@@ -87,10 +91,10 @@ If you want this scaffolded automatically, start with DB models + three endpoint
    cp .env.example .env
    # edit .env to add your API key / defaults
   # Optional Supabase integration (storage + Postgres)
-  # SUPABASE_URL=https://your-project.supabase.co
-  # SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-  # SUPABASE_RESUME_BUCKET=resumes
-  # SUPABASE_ARTIFACT_BUCKET=artifacts
+  SUPABASE_URL=https://your-project.supabase.co
+  SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+  SUPABASE_RESUME_BUCKET=resumes
+  SUPABASE_ARTIFACT_BUCKET=artifacts
    ```
 2. Optionally, override defaults via CLI flags (`--model`, `--base-url`).
 
@@ -123,6 +127,13 @@ Dry run (no API call):
 python3 llm_label_resume.py "resume.pdf" --dry-run
 ```
 
+Job description tailoring (optional):
+```zsh
+python3 llm_label_resume.py "resume.pdf" --job-description "Senior machine learning engineer focused on embedded systems."
+```
+
+You can also point `--job-description-file` at a text document when the posting is too long for the command line.
+
 ### CLI options
 ```zsh
 python3 llm_label_resume.py --help
@@ -132,6 +143,8 @@ Key flags:
 - `--base-url` – custom endpoint, blank uses OpenAI cloud
 - `--output-json` – change output filename (default `labeled_resume.json`)
 - `--dry-run` – skip network call, emit stub payload for testing
+- `--job-description` – paste the target job/role description to nudge the parser toward the hiring criteria
+- `--job-description-file` – path to a text file with the job description (overrides `--job-description`)
 
 ### Environment variables
 - `OPENAI_API_KEY` (required)
@@ -197,6 +210,7 @@ By default the server trusts `LLM_DRY_RUN=0` (real LLM call). For demos without 
 
 Key endpoints and payloads:
 - `POST /api/resumes` – preferred upload endpoint. Parses the PDF, persists a `resume_document` & `portfolio_draft`, and returns normalized data plus `meta.resume_id` / `meta.portfolio_id` for follow-up calls.
+- `POST /api/resumes` – preferred upload endpoint. Accepts the resume PDF plus an optional `job_description` field so the parser knows the role you are targeting; the response still returns normalized data plus `meta.resume_id` / `meta.portfolio_id`.
 - `POST /api/parse` – legacy alias retained for the existing frontend; identical behavior to `/api/resumes`.
 - `PUT /api/portfolios/{portfolio_id}` – saves review/customization edits. The request body should include the same normalized structure returned from upload.
 - `GET /api/portfolios/{portfolio_id}` – fetches the latest draft payload for authenticated/editor flows.

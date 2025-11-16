@@ -9,10 +9,10 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,9 +31,10 @@ from backend.schemas import (
     SchemaSpec,
     SchemaSection,
 )
-from llm_label_resume import label_with_llm
+from llm_label_resume import label_with_llm, generate_tailored_summary, generate_tailored_highlights
 
 MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024  # 8 MB demo guard
+MAX_JOB_DESCRIPTION_LENGTH = 8 * 1024  # limit stored prompt context to 8 KB
 DEFAULT_MODEL = os.getenv("MODEL_NAME", "gpt-4o-mini")
 DEFAULT_BASE_URL = os.getenv("OPENAI_BASE_URL") or None
 DEFAULT_DRY_RUN = os.getenv("LLM_DRY_RUN", "0").strip().lower() in {"1", "true", "yes"}
@@ -102,6 +103,17 @@ async def _read_upload(upload: UploadFile) -> UploadedPDF:
         tmp.flush()
 
     return UploadedPDF(path=Path(tmp.name), size=len(contents), filename=upload.filename or "resume.pdf")
+
+
+def _normalize_job_description(value: Any) -> str:
+    if value is None:
+        return ""
+    text = " ".join(str(value).strip().splitlines())
+    if not text:
+        return ""
+    if len(text) > MAX_JOB_DESCRIPTION_LENGTH:
+        text = text[:MAX_JOB_DESCRIPTION_LENGTH].rstrip()
+    return text
 
 
 def _safe_list(value: Any) -> list[str]:
@@ -273,6 +285,7 @@ def _normalized_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
     payload = {
         "name": parsed.get("name") or "",
         "summary": _collapse_summary(parsed.get("summary")),
+        "job_description": _normalize_job_description(parsed.get("job_description")),
         "experience": _experience_entries(parsed.get("experience")),
         "education": _education_entries(parsed.get("education")),
         "projects": _project_entries(parsed.get("projects")),
@@ -380,6 +393,7 @@ async def _persist_resume(
     normalized: Dict[str, Any],
     model_name: str,
     dry_run: bool,
+    job_description: str | None,
 ) -> Dict[str, Any]:
     resume_id = uuid.uuid4()
     portfolio_id = uuid.uuid4()
@@ -407,6 +421,7 @@ async def _persist_resume(
         storage_uploaded_at=storage_uploaded_at,
         llm_model=model_name,
         dry_run=dry_run,
+        job_description=job_description,
         parsed_payload=copy.deepcopy(parsed),
         normalized_payload=copy.deepcopy(normalized_copy),
     )
@@ -430,23 +445,70 @@ async def _process_resume_request(
     session: AsyncSession,
     model: str | None,
     dry_run: bool | None,
+    job_description: str | None,
 ) -> Dict[str, Any]:
     upload_payload = await _read_upload(file)
     effective_model = model or DEFAULT_MODEL
     effective_dry_run = DEFAULT_DRY_RUN if dry_run is None else dry_run
+    job_description_text = _normalize_job_description(job_description)
     try:
         parsed = label_with_llm(
             pdf_path=upload_payload.path,
             model=effective_model,
             dry_run=effective_dry_run,
             base_url=DEFAULT_BASE_URL,
+            job_description=job_description_text or None,
+        )
+        tailored_summary = (
+            generate_tailored_summary(
+                parsed,
+                job_description_text,
+                model=effective_model,
+                base_url=DEFAULT_BASE_URL,
+                dry_run=effective_dry_run,
+            )
+            if job_description_text
+            else ""
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - catch-all for demo hardening
         raise HTTPException(status_code=500, detail="Failed to parse resume.") from exc
     else:
+        if job_description_text:
+            parsed.setdefault("job_description", job_description_text)
         normalized = _normalized_payload(parsed)
+        if tailored_summary:
+            normalized["original_summary"] = normalized.get("summary", "")
+            normalized["summary"] = tailored_summary
+            normalized.setdefault("meta", {})["tailored_summary"] = True
+
+        highlights = generate_tailored_highlights(
+            normalized,
+            job_description_text,
+            model=effective_model,
+            base_url=DEFAULT_BASE_URL,
+            dry_run=effective_dry_run,
+        )
+        if highlights:
+            normalized.setdefault("experience", [])
+            normalized.setdefault("projects", [])
+            exp_updates = highlights.get("experience", [])
+            proj_updates = highlights.get("projects", [])
+            experience_map = {item.get("id"): item for item in normalized["experience"] if item.get("id")}
+            for update in exp_updates:
+                if not update.get("id"):
+                    continue
+                target = experience_map.get(update["id"])
+                if target and isinstance(update.get("bullets"), list):
+                    target["bullets"] = update["bullets"]
+            project_map = {item.get("id"): item for item in normalized["projects"] if item.get("id")}
+            for update in proj_updates:
+                if not update.get("id"):
+                    continue
+                target = project_map.get(update["id"])
+                if target and isinstance(update.get("bullets"), list):
+                    target["bullets"] = update["bullets"]
         return await _persist_resume(
             session=session,
             upload=upload_payload,
@@ -454,6 +516,7 @@ async def _process_resume_request(
             normalized=normalized,
             model_name=effective_model,
             dry_run=effective_dry_run,
+            job_description=job_description_text or None,
         )
     finally:
         try:
@@ -467,9 +530,16 @@ async def parse_resume(
     file: UploadFile = File(...),
     model: str | None = None,
     dry_run: bool | None = None,
+    job_description: str | None = Form(None),
     session: AsyncSession = Depends(get_session),
 ) -> Dict[str, Any]:
-    normalized = await _process_resume_request(file, session=session, model=model, dry_run=dry_run)
+    normalized = await _process_resume_request(
+        file,
+        session=session,
+        model=model,
+        dry_run=dry_run,
+        job_description=job_description,
+    )
     return {"data": normalized}
 
 
@@ -478,9 +548,16 @@ async def create_resume(
     file: UploadFile = File(...),
     model: str | None = None,
     dry_run: bool | None = None,
+    job_description: str | None = Form(None),
     session: AsyncSession = Depends(get_session),
 ) -> Dict[str, Any]:
-    normalized = await _process_resume_request(file, session=session, model=model, dry_run=dry_run)
+    normalized = await _process_resume_request(
+        file,
+        session=session,
+        model=model,
+        dry_run=dry_run,
+        job_description=job_description,
+    )
     return {"data": normalized}
 
 

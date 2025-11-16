@@ -25,6 +25,7 @@ const candidateEndpoints = normalizedBaseUrl
 export function UploadStep() {
   const inputRef = useRef(null);
   const [error, setError] = useState('');
+  const [jobDescription, setJobDescription] = useState('');
   const { rawFile, setRawFile, setUploadStatus, uploadStatus, setParsedData, nextStep } = usePortfolioStore(
     (state) => ({
       rawFile: state.rawFile,
@@ -61,6 +62,10 @@ export function UploadStep() {
         for (const endpoint of candidateEndpoints) {
           const formData = new FormData();
           formData.append('file', file, file.name);
+          const trimmedJob = jobDescription.trim();
+          if (trimmedJob) {
+            formData.append('job_description', trimmedJob);
+          }
 
           let response;
           try {
@@ -109,7 +114,7 @@ export function UploadStep() {
         setError(apiError.message || 'Something went wrong while parsing the résumé.');
       }
     },
-    [setRawFile, setUploadStatus, setParsedData, nextStep],
+  [jobDescription, setRawFile, setUploadStatus, setParsedData, nextStep],
   );
 
   const onDrop = (event) => {
@@ -168,6 +173,23 @@ export function UploadStep() {
               Selected: <strong className="text-white">{rawFile.name}</strong>
             </span>
           )}
+        </div>
+        <div className="mt-4 w-full text-left">
+          <label htmlFor="job-description" className="text-sm font-semibold text-slate-200">
+            Job description (optional)
+          </label>
+          <p className="text-xs text-slate-400">
+            Paste the role description or bullet list from the job posting to tailor the portfolio output.
+          </p>
+          <textarea
+            id="job-description"
+            value={jobDescription}
+            onChange={(event) => setJobDescription(event.target.value)}
+            placeholder="E.g., Senior Product Design role at a fintech startup."
+            rows={3}
+            maxLength={8192}
+            className="mt-2 h-20 w-full rounded-2xl border border-slate-700/60 bg-slate-900/60 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:border-brand-400 focus:outline-none"
+          />
         </div>
         {error && <p className="text-sm text-rose-300">{error}</p>}
       </div>

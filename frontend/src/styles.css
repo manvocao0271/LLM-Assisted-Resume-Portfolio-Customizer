@@ -5,11 +5,11 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light dark;
+  color-scheme: dark;
 }
 
 body {
-  @apply font-body bg-slate-900 text-slate-100 min-h-screen;
+  @apply font-body bg-black text-white min-h-screen;
 }
 
 .scrollbar-thin {

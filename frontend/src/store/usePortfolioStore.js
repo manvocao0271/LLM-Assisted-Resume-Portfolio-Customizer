@@ -2,15 +2,16 @@ import { create } from 'zustand';
 
 export const REVIEW_SECTION_KEYS = ['name', 'summary', 'contact', 'experience', 'projects', 'education', 'skills'];
 
-const THEME_OPTIONS = [
-  { id: 'aurora', name: 'Aurora', primary: '#42a5f5', accent: '#f472b6' },
-  { id: 'midnight', name: 'Midnight', primary: '#6366f1', accent: '#22d3ee' },
-  { id: 'dawn', name: 'Dawn', primary: '#f97316', accent: '#facc15' },
+export const THEME_OPTIONS = [
+  { id: 'aurora', name: 'Aurora Pulse', primary: '#ff5f6d', accent: '#ffc371' },
+  { id: 'midnight', name: 'Neon Night', primary: '#7c3aed', accent: '#22d3ee' },
+  { id: 'dawn', name: 'Electric Dawn', primary: '#10b981', accent: '#f472b6' },
 ];
 
 const initialData = {
   name: '',
   summary: '',
+  job_description: '',
   experience: [],
   education: [],
   projects: [],
@@ -69,6 +70,14 @@ const generateSummary = (payload) => {
   const name = typeof payload.name === 'string' ? payload.name.trim() : '';
   const experience = Array.isArray(payload.experience) ? payload.experience : [];
   const skills = Array.isArray(payload.skills) ? payload.skills : [];
+  const jobDescription = typeof payload.job_description === 'string' ? payload.job_description.trim() : '';
+  const jobDescriptionPreview = jobDescription
+    ? `${jobDescription.slice(0, 157)}${jobDescription.length > 160 ? '…' : ''}`
+    : '';
+  const appendJobHint = (text) =>
+    jobDescriptionPreview
+      ? `${text} Tailored to the job description: ${jobDescriptionPreview}.`
+      : text;
 
   const leadExperience = experience.find((entry) => entry && (entry.role || entry.company || entry.period));
 
@@ -91,18 +100,16 @@ const generateSummary = (payload) => {
       segments.push('Eager to translate recent achievements into a standout portfolio presentation.');
     }
 
-    return segments.join(' ').replace(/\s+/g, ' ').trim();
+    return appendJobHint(segments.join(' ').replace(/\s+/g, ' ').trim());
   }
 
   if (skillHighlights.length) {
-    return (
-      `Skilled in ${skillHighlights.join(', ')}, ready to highlight accomplishments in a tailored portfolio.`
+    return appendJobHint(
+      `Skilled in ${skillHighlights.join(', ')}, ready to highlight accomplishments in a tailored portfolio.`,
     );
   }
 
-  return (
-    'Preparing a portfolio to spotlight key achievements, strengths, and career story.'
-  );
+  return appendJobHint('Preparing a portfolio to spotlight key achievements, strengths, and career story.');
 };
 
 const normalizedBaseUrl = (() => {
@@ -252,6 +259,9 @@ const sanitizeData = (payload) => {
       .filter(Boolean);
   };
 
+  const rawJobDescription = extractText(base.job_description);
+  const jobDescription = rawJobDescription.length > 4096 ? `${rawJobDescription.slice(0, 4093)}…` : rawJobDescription;
+
   const normalizedExperience = Array.isArray(base.experience)
     ? base.experience.map((entry) => {
         const bullets = normalizeStringArray(entry?.bullets ?? entry?.achievements);
@@ -321,6 +331,7 @@ const sanitizeData = (payload) => {
     ...initialData,
     ...base,
     summary,
+    job_description: jobDescription,
     experience: normalizedExperience,
     projects: normalizedProjects,
     education: normalizedEducation,

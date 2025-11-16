@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -15,6 +16,8 @@ try:  # lightweight optional dependency
 	load_dotenv(override=True)
 except Exception:
 	pass
+
+logger = logging.getLogger(__name__)
 
 # Optional dependency on OpenAI SDK v1
 try:
@@ -33,6 +36,17 @@ SYSTEM_PROMPT = (
 )
 
 # ---- Minimal PDF extraction (inlined) ----
+
+MAX_JOB_DESCRIPTION_LENGTH = 8 * 1024  # Restrict context to reasonable size
+
+
+def _clean_job_description(description: Optional[str]) -> str:
+	if not description:
+		return ""
+	text = " ".join(description.strip().splitlines())
+	if len(text) > MAX_JOB_DESCRIPTION_LENGTH:
+		text = text[:MAX_JOB_DESCRIPTION_LENGTH].rstrip()
+	return text
 
 def _extract_links_from_page(page, page_number: int) -> list[dict[str, str | int]]:
 	links: list[dict[str, str | int]] = []
@@ -148,11 +162,19 @@ def call_openai(prompt: str, model: str = "gpt-4o-mini", base_url: str | None = 
 	return resp.choices[0].message.content or ""
 
 
-def build_prompt(raw_text: str) -> str:
+def build_prompt(raw_text: str, job_description: Optional[str] = None) -> str:
 	preamble = (
 		"Label the resume content below. Output JSON only, no prose. If unsure about a field, set it to null or [] as appropriate.\n\n"
 	)
-	return preamble + raw_text
+	prompt = preamble + raw_text
+	if job_description:
+		prompt += (
+			"\n\nJob description:\n"
+			f"{job_description}\n\n"
+			"Leverage this job description to highlight the most relevant experience, projects, and skills. "
+			"If a section clearly matches the role, prioritize it in summaries and bullets, and note why it matters."
+		)
+	return prompt
 
 
 def _coerce_json(content: str) -> Dict[str, Any]:
@@ -180,8 +202,25 @@ def _coerce_json(content: str) -> Dict[str, Any]:
 	return json.loads(text)
 
 
-def label_with_llm(pdf_path: Path, model: str, dry_run: bool, base_url: str | None = None) -> Dict[str, Any]:
+
+def _summaries_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
+	return {
+		"summary": parsed.get("summary"),
+		"experience": parsed.get("experience"),
+		"projects": parsed.get("projects"),
+		"skills": parsed.get("skills"),
+	}
+
+
+def label_with_llm(
+	pdf_path: Path,
+	model: str,
+	dry_run: bool,
+	base_url: str | None = None,
+	job_description: Optional[str] = None,
+) -> Dict[str, Any]:
 	raw_text, links = extract_text_and_links(pdf_path)
+	job_description_text = _clean_job_description(job_description)
 	if dry_run:
 		# When dry running, try to surface realistic data so the UI can be exercised.
 		sample_path = Path("labeled_resume.json")
@@ -189,17 +228,19 @@ def label_with_llm(pdf_path: Path, model: str, dry_run: bool, base_url: str | No
 			try:
 				sample = json.loads(sample_path.read_text(encoding="utf-8"))
 				sample.setdefault("embedded_links", links)
+				if job_description_text:
+					sample.setdefault("job_description", job_description_text)
 				return sample
 			except Exception:
 				pass
 
 		# Built-in illustrative payload if no saved sample is available
-		return {
+		result = {
 			"name": "Jordan Rivers",
 			"contact": {
 				"emails": ["jordan.rivers@example.com"],
-				"phones": ["(415) 555-0199"],
-				"urls": ["https://www.linkedin.com/in/jordanrivers", "https://github.com/jordanrivers"],
+				"phones": ["(123) 456-7890"],
+				"urls": ["https://www.linkedin.com/in/", "https://github.com/"],
 			},
 			"summary": [
 				"Full-stack engineer focused on AI-assisted productivity tools.",
@@ -276,9 +317,11 @@ def label_with_llm(pdf_path: Path, model: str, dry_run: bool, base_url: str | No
 				"OpenAI API",
 			],
 			"embedded_links": links,
+			"job_description": job_description_text,
 		}
+		return result
 
-	prompt = build_prompt(raw_text)
+	prompt = build_prompt(raw_text, job_description_text)
 	content = call_openai(prompt, model=model, base_url=base_url)
 	try:
 		parsed = _coerce_json(content)
@@ -288,7 +331,86 @@ def label_with_llm(pdf_path: Path, model: str, dry_run: bool, base_url: str | No
 			Path("llm_raw.txt").write_text(content or "", encoding="utf-8")
 		raise RuntimeError("LLM returned non-JSON content. Try again or adjust the prompt.")
 	parsed["embedded_links"] = links
+	if job_description_text:
+		parsed["job_description"] = job_description_text
 	return parsed
+
+
+
+def generate_tailored_summary(
+	parsed: Dict[str, Any],
+	job_description: str,
+	model: str,
+	base_url: str | None = None,
+	dry_run: bool = False,
+) -> str:
+	job_text = _clean_job_description(job_description)
+	if not job_text or dry_run:
+		return ""
+	data = _summaries_payload(parsed)
+	input_payload = json.dumps(data, ensure_ascii=False)
+	prompt = (
+		"You received the parsed resume JSON below. Rewrite the summary so it reads like a short, professional pitch tailored to the job description,"
+		" but keep it generalized for the applicant (without specific numbers or metrics). Keep the facts accurate, mention the most relevant experience, and keep it under 220 characters."
+		f"\n\nParsed resume data: {input_payload}\n\nJob description: {job_text}\n\n"
+		"Return valid JSON: {\"summary\": \"...\"}."
+	)
+	try:
+		content = call_openai(prompt, model=model, base_url=base_url)
+		result = _coerce_json(content)
+		summary = result.get("summary")
+		if isinstance(summary, str):
+			return summary.strip()
+	except Exception as exc:
+		logger.warning("Unable to generate tailored summary: %s", exc)
+	return ""
+
+
+def generate_tailored_highlights(
+	normalized: Dict[str, Any],
+	job_description: str,
+	model: str,
+	base_url: str | None = None,
+	dry_run: bool = False,
+) -> Dict[str, Any]:
+	job_text = _clean_job_description(job_description)
+	if not job_text or dry_run:
+		return {}
+	experience = normalized.get("experience", [])
+	projects = normalized.get("projects", [])
+	def strip_bullets(items):
+		return [
+			{
+				"id": item.get("id"),
+				"role": item.get("role") or item.get("title"),
+				"company": item.get("company"),
+				"bullets": item.get("bullets") or [],
+			}
+			for item in items if item.get("id")
+		]
+	payload = {
+		"experience": strip_bullets(experience[:4]),
+		"projects": [
+			{"id": proj.get("id"), "name": proj.get("name"), "bullets": proj.get("bullets") or []}
+			for proj in projects[:3]
+		],
+	}
+	if not payload["experience"] and not payload["projects"]:
+		return {}
+	input_payload = json.dumps(payload, ensure_ascii=False)
+	prompt = (
+		"You received the parsed resume highlights below. Rewrite each bullet so the content feels aligned with the job description, without using numeric metrics. "
+		"Maintain the same number of bullets for each role/project, keep the tone professional, and keep it generalized for the applicant."
+		f"\n\nHighlights data: {input_payload}\n\nJob description: {job_text}\n\n"
+		"Return JSON that mirrors the input structure (experience highligths list and project highlights list)."
+	)
+	try:
+		content = call_openai(prompt, model=model, base_url=base_url)
+		result = _coerce_json(content)
+		return result if isinstance(result, dict) else {}
+	except Exception as exc:
+		logger.warning("Unable to generate tailored highlights: %s", exc)
+	return {}
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -308,6 +430,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
 	)
 	parser.add_argument("--output-json", default="labeled_resume.json", help="Path for LLM-structured JSON output.")
 	parser.add_argument("--dry-run", action="store_true", help="Do not call the LLM; output a stub JSON using extracted text headers.")
+	parser.add_argument("--job-description", help="Optional job description text to tailor the labeled data.")
+	parser.add_argument(
+		"--job-description-file",
+		help="Path to a text file with the job description. Overrides --job-description if set.",
+	)
 	return parser
 
 
@@ -316,7 +443,16 @@ def main(argv: Optional[List[str]] = None) -> int:
 	args = parser.parse_args(argv)
 	
 	pdf_path = resolve_pdf_path(args.pdf_path)
-	result = label_with_llm(pdf_path=pdf_path, model=args.model, dry_run=bool(args.dry_run), base_url=args.base_url or None)
+	job_description = args.job_description
+	if args.job_description_file:
+		job_description = Path(args.job_description_file).expanduser().read_text(encoding="utf-8")
+	result = label_with_llm(
+		pdf_path=pdf_path,
+		model=args.model,
+		dry_run=bool(args.dry_run),
+		base_url=args.base_url or None,
+		job_description=job_description,
+	)
 	out_path = Path(args.output_json).expanduser().resolve()
 	out_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
 	print(f"LLM-labeled JSON written to {out_path}")

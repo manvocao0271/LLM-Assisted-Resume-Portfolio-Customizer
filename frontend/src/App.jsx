@@ -27,17 +27,17 @@ export default function App() {
   const ActiveStepComponent = steps[step] ?? UploadStep;
 
   return (
-    <div className="bg-slate-900 text-slate-100">
+    <main className="min-h-screen bg-black text-slate-100">
       <div className="mx-auto flex min-h-screen max-w-7xl flex-col gap-12 px-6 py-10 lg:flex-row">
         <div className="flex-1 space-y-10">
           <Header />
           <StepIndicator currentStep={step} onSelect={setStep} />
-          <div className="rounded-3xl border border-slate-800 bg-slate-900/80 p-6 shadow-card">
+          <div className="rounded-3xl border border-brand-500/30 bg-slate-900/70 p-6 shadow-card">
             <ActiveStepComponent />
           </div>
           <StepNavigation />
         </div>
       </div>
-    </div>
+    </main>
   );
 }
