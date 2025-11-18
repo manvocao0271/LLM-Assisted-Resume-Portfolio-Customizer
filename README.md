@@ -26,6 +26,7 @@ Building public-facing portfolios from résumés usually requires manual reforma
 - Review & Customize steps now feature buffered inputs, HTTPS-only link sanitization, and up/down section reordering that matches the public preview order.
 - A discrete “Preview draft” flow saves the latest edits, opens `/preview/:slug`, and safeguards draft access by requiring both slug and portfolio ID.
 - The experimental schema-first generator translates prompts into deterministic UI specs, offering creative layouts without allowing arbitrary HTML or scripts.
+- Added a job description-driven classifier that blends keyword matching with lightweight semantic similarity, infers the target role, reports the matched keywords, and exposes the confidence and similarity rating so reviewers can align the story before publishing.
 - Documentation, build scripts, and environment scaffolding let contributors stand up the full stack quickly (Python backend, React frontend, optional Supabase services).
 
 ## Project status
@@ -51,6 +52,7 @@ What’s already working and what’s left for a minimal publishable MVP.
   - Vite + React + Tailwind + Zustand multi-step flow (Upload → Review → Customize → Preview)
   - Upload step retries common API base URLs and supports `VITE_API_BASE_URL`
   - Upload step lets you paste or drop a job description (optional) so the backend can tailor the normalized data to that role.
+  - Review & Edit now surfaces a role-fit evaluation card that compares the parsed résumé against the provided job description, exposing a similarity score, matched keywords, and short recommendations before publishing.
 - Dev ergonomics
   - Vite proxy forwards `/api/*` to the backend during dev
   - Root npm scripts (`npm run setup|dev|build|preview`) delegate to the frontend package
@@ -176,9 +178,19 @@ You can tailor the schema by editing the `SYSTEM_PROMPT` in `llm_label_resume.py
 - Run `--dry-run` during development to avoid spending tokens.
 - The script automatically loads `.env`, so keep that file out of version control.
 
+## Offline classifier testing
+
+When you don’t want to re-upload the same PDF each time, reuse the stored parser output and run the backend classifiers directly:
+
+1. Generate `labeled_resume.json` once via `python3 llm_label_resume.py resume.pdf --dry-run` (or reuse the existing fixture).
+2. Run `python backend/classifier_test.py` to see what both `job_type` and `resume_job_type` inference produce from that JSON.
+3. Pass a job description to the script for the job-type classifier using `--job-description "Senior Product Manager"` or `--job-description-file path/to/description.txt`.
+
+This keeps you local, deterministic, and fast so you can iterate on classification heuristics without calling the upload API or an LLM again.
+
 ## Frontend prototype
 
-`frontend/` contains a Vite + React dashboard that walks through upload → review → customization. Tailwind CSS powers the styling and Zustand holds client state. To explore the demo locally:
+`frontend/` contains a Vite + React dashboard that walks through upload → review → customization. Tailwind CSS powers the styling and Zustand holds client state. The draft and public preview routes now render the new `NeonPortfolioPreview` component, keeping the data flow the same but wrapping the experience in a dark, gradient-driven layout before publishing. To explore the demo locally:
 
 ```zsh
 cd frontend
@@ -186,7 +198,9 @@ npm install
 npm run dev
 ```
 
-The build output lives in `frontend/dist` after running `npm run build`.
+The build output lives in `frontend/dist` after running `npm run build`, and the command still succeeds with the neon preview wired into the pages.
+
+While you are refining résumé data the review page now calls `/api/resumes/{resume_id}/fit` when a job description is present. This ML analysis returns a percentage match, highlights which keywords already align, and surfaces quick suggestions so you can tailor the draft before publishing.
 
 Published portfolios are served client-side at `/p/:slug` (for example `http://localhost:5173/p/demo-slug`) and proxy through to the backend’s `GET /api/portfolios/by-slug/{slug}` endpoint.
 
@@ -215,6 +229,7 @@ Key endpoints and payloads:
 - `PUT /api/portfolios/{portfolio_id}` – saves review/customization edits. The request body should include the same normalized structure returned from upload.
 - `GET /api/portfolios/{portfolio_id}` – fetches the latest draft payload for authenticated/editor flows.
 - `GET /api/portfolios/by-slug/{slug}` – public read model (only returns `published` + non-`private` portfolios).
+- `GET /api/resumes/{resume_id}/fit` – ML-powered resume vs job description similarity that returns a match score, matched keywords, missing keywords, and tactical suggestions for sharpening the narrative.
 
 Every response includes a `meta` block with `resume_id`, `portfolio_id`, and current `status`/`visibility` so the UI can keep track of persisted entities.
 

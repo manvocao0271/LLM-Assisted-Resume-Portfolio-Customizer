@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -38,6 +39,16 @@ SYSTEM_PROMPT = (
 # ---- Minimal PDF extraction (inlined) ----
 
 MAX_JOB_DESCRIPTION_LENGTH = 8 * 1024  # Restrict context to reasonable size
+MAX_RESUME_CLASSIFIER_TEXT = 32 * 1024  # Trim raw resume text for downstream classifiers
+
+def _prepare_resume_classifier_text(raw_text: str | None) -> str:
+	if not raw_text:
+		return ""
+	# Collapse runs of whitespace so downstream tokenizers see consistent spacing
+	text = re.sub(r"\s+", " ", raw_text).strip()
+	if len(text) > MAX_RESUME_CLASSIFIER_TEXT:
+		text = text[:MAX_RESUME_CLASSIFIER_TEXT].rstrip()
+	return text
 
 
 def _clean_job_description(description: Optional[str]) -> str:
@@ -220,6 +231,7 @@ def label_with_llm(
 	job_description: Optional[str] = None,
 ) -> Dict[str, Any]:
 	raw_text, links = extract_text_and_links(pdf_path)
+	classifier_text = _prepare_resume_classifier_text(raw_text)
 	job_description_text = _clean_job_description(job_description)
 	if dry_run:
 		# When dry running, try to surface realistic data so the UI can be exercised.
@@ -228,6 +240,8 @@ def label_with_llm(
 			try:
 				sample = json.loads(sample_path.read_text(encoding="utf-8"))
 				sample.setdefault("embedded_links", links)
+				if classifier_text:
+					sample.setdefault("raw_resume_text", classifier_text)
 				if job_description_text:
 					sample.setdefault("job_description", job_description_text)
 				return sample
@@ -318,6 +332,7 @@ def label_with_llm(
 			],
 			"embedded_links": links,
 			"job_description": job_description_text,
+			"raw_resume_text": classifier_text,
 		}
 		return result
 
@@ -333,6 +348,8 @@ def label_with_llm(
 	parsed["embedded_links"] = links
 	if job_description_text:
 		parsed["job_description"] = job_description_text
+		if classifier_text:
+			parsed["raw_resume_text"] = classifier_text
 	return parsed
 
 

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import clsx from 'classnames';
 import { UploadIcon } from './icons.jsx';
 import { usePortfolioStore } from '../store/usePortfolioStore.js';
@@ -26,7 +26,7 @@ export function UploadStep() {
   const inputRef = useRef(null);
   const [error, setError] = useState('');
   const [jobDescription, setJobDescription] = useState('');
-  const { rawFile, setRawFile, setUploadStatus, uploadStatus, setParsedData, nextStep } = usePortfolioStore(
+  const { rawFile, setRawFile, setUploadStatus, uploadStatus, setParsedData, nextStep, step } = usePortfolioStore(
     (state) => ({
       rawFile: state.rawFile,
       setRawFile: state.setRawFile,
@@ -34,11 +34,12 @@ export function UploadStep() {
       uploadStatus: state.uploadStatus,
       setParsedData: state.setParsedData,
       nextStep: state.nextStep,
+      step: state.step,
     }),
   );
 
   const handleFiles = useCallback(
-    async (files) => {
+    (files) => {
       const file = files?.[0];
       if (!file) return;
 
@@ -54,68 +55,93 @@ export function UploadStep() {
 
       setError('');
       setRawFile(file);
-      setUploadStatus('uploading');
+      setUploadStatus('ready');
+    },
+    [setError, setRawFile, setUploadStatus],
+  );
 
-      try {
-        let lastNetworkError = null;
+  const parseResume = useCallback(async () => {
+    if (!rawFile) {
+      setError('Please upload a PDF before parsing.');
+      return;
+    }
 
-        for (const endpoint of candidateEndpoints) {
-          const formData = new FormData();
-          formData.append('file', file, file.name);
-          const trimmedJob = jobDescription.trim();
-          if (trimmedJob) {
-            formData.append('job_description', trimmedJob);
-          }
+    setError('');
+    setUploadStatus('uploading');
+    const fileToUpload = rawFile;
+    const trimmedJob = jobDescription.trim();
 
-          let response;
-          try {
-            response = await fetch(endpoint, {
-              method: 'POST',
-              body: formData,
-            });
-          } catch (networkError) {
-            lastNetworkError = networkError;
-            continue;
-          }
+    try {
+      let lastNetworkError = null;
 
-          const text = await response.text();
-          let payload = null;
-          try {
-            payload = text ? JSON.parse(text) : null;
-          } catch (parseError) {
-            console.warn('Unable to parse API response JSON', parseError);
-          }
-
-          if (!response.ok) {
-            const detail = payload?.detail || payload?.message;
-            throw new Error(detail || 'Failed to parse résumé.');
-          }
-
-          if (!payload?.data) {
-            throw new Error('Unexpected API response.');
-          }
-
-          setParsedData(payload.data);
-          setUploadStatus('parsed');
-          nextStep();
-          return;
+      for (const endpoint of candidateEndpoints) {
+        const formData = new FormData();
+        formData.append('file', fileToUpload, fileToUpload.name);
+        if (trimmedJob) {
+          formData.append('job_description', trimmedJob);
         }
 
-        const networkMessage =
-          lastNetworkError instanceof Error && lastNetworkError.message
-            ? lastNetworkError.message
-            : 'Could not reach the résumé parsing service.';
-        throw new Error(
-          `${networkMessage} Ensure the backend is running on http://localhost:8000 or set VITE_API_BASE_URL.`,
-        );
-      } catch (apiError) {
-        console.error(apiError);
-        setUploadStatus('error');
-        setError(apiError.message || 'Something went wrong while parsing the résumé.');
+        let response;
+        try {
+          response = await fetch(endpoint, {
+            method: 'POST',
+            body: formData,
+          });
+        } catch (networkError) {
+          lastNetworkError = networkError;
+          continue;
+        }
+
+        const text = await response.text();
+        let payload = null;
+        try {
+          payload = text ? JSON.parse(text) : null;
+        } catch (parseError) {
+          console.warn('Unable to parse API response JSON', parseError);
+        }
+
+        if (!response.ok) {
+          const detail = payload?.detail || payload?.message;
+          throw new Error(detail || 'Failed to parse résumé.');
+        }
+
+        if (!payload?.data) {
+          throw new Error('Unexpected API response.');
+        }
+
+        setParsedData(payload.data);
+        setUploadStatus('parsed');
+        nextStep();
+        return;
       }
-    },
-  [jobDescription, setRawFile, setUploadStatus, setParsedData, nextStep],
-  );
+
+      const networkMessage =
+        lastNetworkError instanceof Error && lastNetworkError.message
+          ? lastNetworkError.message
+          : 'Could not reach the résumé parsing service.';
+      throw new Error(
+        `${networkMessage} Ensure the backend is running on http://localhost:8000 or set VITE_API_BASE_URL.`,
+      );
+    } catch (apiError) {
+      console.error(apiError);
+      setUploadStatus('error');
+      setError(apiError.message || 'Something went wrong while parsing the résumé.');
+    }
+  }, [jobDescription, nextStep, rawFile, setError, setParsedData, setUploadStatus]);
+
+  useEffect(() => {
+    if (step !== 0) {
+      return;
+    }
+
+    if (rawFile && uploadStatus === 'parsed') {
+      setUploadStatus('ready');
+    }
+
+    if (!rawFile && uploadStatus === 'ready') {
+      setUploadStatus('idle');
+    }
+  }, [rawFile, uploadStatus, setUploadStatus, step]);
 
   const onDrop = (event) => {
     event.preventDefault();
@@ -129,10 +155,11 @@ export function UploadStep() {
 
   const statusMessage = {
     idle: 'Drop your résumé PDF here or browse files',
+    ready: 'Résumé staged. Tap the button below when you’re ready to parse and evaluate role focus.',
     uploading: 'Uploading résumé…',
     parsed: 'Résumé parsed! Move to the next step to review data.',
     error: 'We hit a snag while parsing. Please try again.',
-  }[uploadStatus];
+  }[uploadStatus] ?? 'Drop your résumé PDF here or browse files';
 
   return (
     <section
@@ -190,6 +217,26 @@ export function UploadStep() {
             maxLength={8192}
             className="mt-2 h-20 w-full rounded-2xl border border-slate-700/60 bg-slate-900/60 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:border-brand-400 focus:outline-none"
           />
+        </div>
+        <div className="mt-6 w-full space-y-2 text-center">
+          <button
+            type="button"
+            onClick={parseResume}
+            disabled={!rawFile || uploadStatus === 'uploading'}
+            className={clsx(
+              'w-full rounded-full px-5 py-2 text-sm font-semibold text-white shadow-lg transition duration-200',
+              rawFile && uploadStatus !== 'uploading'
+                ? 'bg-brand-500/90 hover:bg-brand-500'
+                : 'bg-slate-600/80 cursor-not-allowed',
+            )}
+          >
+            {uploadStatus === 'uploading'
+              ? 'Parsing résumé…'
+              : 'Parse résumé and evaluate role focus'}
+          </button>
+          <p className="text-xs text-slate-400">
+            Parsing only runs after you confirm. Once complete, we’ll evaluate the fit and move you into the review step.
+          </p>
         </div>
         {error && <p className="text-sm text-rose-300">{error}</p>}
       </div>

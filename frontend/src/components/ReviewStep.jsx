@@ -55,6 +55,54 @@ function AutoResizeTextarea({ value, onChange, className, minRows = 2, maxHeight
   );
 }
 
+function JobTypeCard({ jobType, title = 'Job type classifier', description = 'We scan your résumé summary, skills, and titles for role signals.' }) {
+  const category = typeof jobType?.category === 'string' && jobType.category ? jobType.category : '';
+  const confidenceValue =
+    typeof jobType?.confidence === 'number' && Number.isFinite(jobType.confidence)
+      ? Math.round(Math.max(0, Math.min(1, jobType.confidence)) * 100)
+      : null;
+  const keywords = Array.isArray(jobType?.matches) ? jobType.matches.filter(Boolean) : [];
+
+  return (
+    <section className="rounded-2xl border border-slate-700 bg-slate-800/70 p-5 shadow-card">
+      <header className="flex items-center justify-between gap-3 border-b border-slate-700/80 pb-2">
+        <div>
+          <h3 className="text-base font-semibold text-white">{title}</h3>
+          {description ? <p className="text-xs text-slate-400">{description}</p> : null}
+        </div>
+        <span className="text-xs uppercase tracking-[0.3em] text-slate-500">ML</span>
+      </header>
+      <div className="mt-4 space-y-2 text-sm text-slate-200">
+        {category ? (
+          <p className="text-sm text-white">
+            Detected focus: <strong>{category}</strong>{' '}
+            {confidenceValue !== null ? <span className="text-xs text-slate-400">({confidenceValue}% confidence)</span> : null}
+          </p>
+        ) : (
+          <p className="text-slate-400">We couldn’t identify a strong role focus yet.</p>
+        )}
+        {keywords.length ? (
+          <div className="flex flex-wrap gap-2">
+            {keywords.slice(0, 6).map((keyword) => (
+              <span
+                key={keyword}
+                className="rounded-full border border-slate-600 px-3 py-1 text-xs text-slate-200"
+              >
+                {keyword}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {!category && !keywords.length ? (
+          <p className="text-xs text-slate-500">
+            Add more project or experience detail to help the classifier narrow a match.
+          </p>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
 export function ReviewStep() {
   const data = usePortfolioStore((state) => state.data);
   const updateData = usePortfolioStore((state) => state.updateData);
@@ -75,6 +123,8 @@ export function ReviewStep() {
   const hasProjects = projects.length > 0;
   const hasEducation = education.length > 0;
   const hasSkills = skills.length > 0;
+  const jobType = data.job_type || {};
+  const resumeJobType = data.resume_job_type || {};
 
   // Summary local buffer
   const [summaryValue, setSummaryValue] = useState(data.summary || '');
@@ -583,6 +633,18 @@ export function ReviewStep() {
 
   return (
     <div className="space-y-4">
+      <div className="grid gap-4 lg:grid-cols-2">
+        <JobTypeCard
+          jobType={jobType}
+          title="Job description classifier"
+          description="We scan the job description you provided to match your portfolio focus with the target opportunity."
+        />
+        <JobTypeCard
+          jobType={resumeJobType}
+          title="Résumé classifier"
+          description="We infer a role focus directly from your résumé text so you can compare it with the job description signal."
+        />
+      </div>
       {sectionEntries.map((section, idx) => {
         const isFirst = idx === 0;
         const isLast = idx === sectionEntries.length - 1;

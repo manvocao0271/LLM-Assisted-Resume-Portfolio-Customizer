@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import copy
 import logging
+import math
 import os
+import re
 import sys
 import tempfile
 import uuid
+from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +34,7 @@ from backend.schemas import (
     SchemaSpec,
     SchemaSection,
 )
+from backend.job_types import JOB_TYPE_DEFINITIONS
 from llm_label_resume import label_with_llm, generate_tailored_summary, generate_tailored_highlights
 
 MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024  # 8 MB demo guard
@@ -38,6 +42,7 @@ MAX_JOB_DESCRIPTION_LENGTH = 8 * 1024  # limit stored prompt context to 8 KB
 DEFAULT_MODEL = os.getenv("MODEL_NAME", "gpt-4o-mini")
 DEFAULT_BASE_URL = os.getenv("OPENAI_BASE_URL") or None
 DEFAULT_DRY_RUN = os.getenv("LLM_DRY_RUN", "0").strip().lower() in {"1", "true", "yes"}
+RAW_RESUME_FALLBACK_CONFIDENCE = 0.2  # below this, try structured fragments as a fallback
 
 THEME_OPTIONS = [
     {"id": "aurora", "name": "Aurora", "primary": "#42a5f5", "accent": "#f472b6"},
@@ -115,6 +120,379 @@ def _normalize_job_description(value: Any) -> str:
         text = text[:MAX_JOB_DESCRIPTION_LENGTH].rstrip()
     return text
 
+
+FIT_STOP_WORDS = {
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "from",
+    "have",
+    "will",
+    "your",
+    "their",
+    "about",
+    "these",
+    "those",
+    "also",
+    "which",
+    "communicate",
+    "experience",
+    "skills",
+    "work",
+    "team",
+    "role",
+    "responsibilities",
+    "project",
+    "projects",
+    "ability",
+    "candidate",
+    "strong",
+    "preferred",
+    "time",
+    "multiple",
+    "drive",
+    "support",
+}
+
+
+def _normalize_token_word(token: str) -> str:
+    if not token:
+        return token
+    original = token
+    if len(token) > 4:
+        if token.endswith("ies") and token[-4] not in {"a", "e", "i", "o", "u"}:
+            token = f"{token[:-3]}y"
+        elif token.endswith("ses") and not token.endswith("sses"):
+            token = token[:-2]
+        elif token.endswith("s") and not token.endswith(("ss", "us", "is")):
+            token = token[:-1]
+    if not token:
+        return original
+    return token
+
+
+def _tokenize_text(value: str) -> list[str]:
+    if not value:
+        return []
+    candidates = re.findall(r"[a-z0-9]+", value.lower())
+    normalized: list[str] = []
+    for candidate in candidates:
+        if candidate in FIT_STOP_WORDS or len(candidate) <= 1:
+            continue
+        normalized.append(_normalize_token_word(candidate))
+    return normalized
+
+
+def _skill_token_set(skills: Any) -> set[str]:
+    tokens: set[str] = set()
+    if not isinstance(skills, list):
+        return tokens
+    for skill in skills:
+        if not isinstance(skill, str):
+            continue
+        normalized = skill.strip().lower()
+        if not normalized:
+            continue
+        tokens.add(normalized)
+        normalized_alt = normalized.replace("++", "pp")
+        if normalized_alt != normalized:
+            tokens.add(normalized_alt)
+        tokens.update(_tokenize_text(normalized))
+    return tokens
+
+
+_DEFINITION_TOKEN_COUNTERS: dict[str, Counter[str]] = {}
+for definition in JOB_TYPE_DEFINITIONS:
+    keywords = definition.get("keywords", [])
+    skill_keywords = definition.get("skill_keywords", [])
+    combined = " ".join(list(keywords) + list(skill_keywords))
+    _DEFINITION_TOKEN_COUNTERS[definition["id"]] = Counter(_tokenize_text(combined))
+
+_KEYWORD_PATTERN_CACHE: dict[str, re.Pattern] = {}
+
+
+def _keyword_pattern(keyword: str) -> re.Pattern:
+    normalized = " ".join(str(keyword).strip().lower().split())
+    if not normalized:
+        raise ValueError("Keyword for job type classification must not be empty.")
+    pattern = _KEYWORD_PATTERN_CACHE.get(normalized)
+    if pattern:
+        return pattern
+    escaped = re.escape(normalized)
+    escaped = escaped.replace(r"\ ", r"\s+")
+    if not normalized.endswith("s"):
+        escaped = f"{escaped}(?:s)?"
+    compiled = re.compile(rf"\b{escaped}\b", re.IGNORECASE)
+    _KEYWORD_PATTERN_CACHE[normalized] = compiled
+    return compiled
+
+
+def _keyword_in_text(keyword: str, text: str) -> bool:
+    if not keyword or not text:
+        return False
+    try:
+        pattern = _keyword_pattern(keyword)
+    except ValueError:
+        return False
+    return bool(pattern.search(text))
+
+
+def _general_job_type() -> Dict[str, Any]:
+    return {
+        "category": "General",
+        "category_id": "general",
+        "confidence": 0.0,
+        "matches": [],
+        "matched_skills": [],
+    }
+
+
+def _collect_classification_fragments(payload: Dict[str, Any]) -> list[str]:
+    fragments: list[str] = []
+
+    def _append(value: Any) -> None:
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                fragments.append(text)
+        elif isinstance(value, list):
+            for item in value:
+                _append(item)
+
+    _append(payload.get("summary"))
+
+    for experience_item in payload.get("experience") or []:
+        if not isinstance(experience_item, dict):
+            continue
+        _append(experience_item.get("role"))
+        _append(experience_item.get("title"))
+        _append(experience_item.get("company"))
+        _append(experience_item.get("organization"))
+        _append(experience_item.get("bullets"))
+        _append(experience_item.get("achievements"))
+
+    for project in payload.get("projects") or []:
+        if not isinstance(project, dict):
+            continue
+        _append(project.get("name"))
+        _append(project.get("title"))
+        _append(project.get("description"))
+        _append(project.get("summary"))
+        _append(project.get("bullets"))
+
+    _append(payload.get("skills"))
+
+    return fragments
+
+
+def _infer_job_type(payload: Dict[str, Any]) -> Dict[str, Any]:
+    raw_description = payload.get("job_description") or ""
+    normalized_description = _normalize_job_description(raw_description)
+    skill_tokens: set[str] | None = None
+    raw_payload = payload.get("raw")
+    if isinstance(raw_payload, dict):
+        job_desc_skills = raw_payload.get("job_description_skills") or raw_payload.get("job_skills")
+        if isinstance(job_desc_skills, list):
+            tokens = _skill_token_set(job_desc_skills)
+            if tokens:
+                skill_tokens = tokens
+    return _infer_job_type_from_description(normalized_description, skill_tokens=skill_tokens)
+
+
+def _infer_job_type_from_description(
+    description: str,
+    *,
+    skill_tokens: set[str] | None = None,
+) -> Dict[str, Any]:
+    clean = " ".join(description.split())
+    normalized_skill_tokens = skill_tokens or set()
+    if not clean and not normalized_skill_tokens:
+        return _general_job_type()
+
+    job_tokens = _tokenize_text(clean)
+    job_counter = Counter(job_tokens)
+    if not job_tokens and not normalized_skill_tokens:
+        return _general_job_type()
+
+    best: dict[str, Any] | None = None
+    for definition in JOB_TYPE_DEFINITIONS:
+        matches: list[str] = []
+        skill_matches: list[str] = []
+        for keyword in definition["keywords"]:
+            if _keyword_in_text(keyword, clean):
+                matches.append(keyword)
+
+        keyword_score = len(matches) / max(1, len(definition["keywords"]))
+        definition_counter = _DEFINITION_TOKEN_COUNTERS.get(definition["id"], Counter())
+        semantic_score = _cosine_similarity(job_counter, definition_counter)
+        skill_keywords = definition.get("skill_keywords") or []
+        if skill_keywords:
+            for skill_keyword in skill_keywords:
+                normalized = skill_keyword.strip().lower()
+                if not normalized:
+                    continue
+                if normalized_skill_tokens and (
+                    normalized in normalized_skill_tokens
+                    or any(token in normalized_skill_tokens for token in _tokenize_text(normalized))
+                ):
+                    skill_matches.append(skill_keyword)
+                    continue
+                if _keyword_in_text(skill_keyword, clean):
+                    skill_matches.append(skill_keyword)
+        skill_score = len(skill_matches) / max(1, len(skill_keywords)) if skill_keywords else 0.0
+
+        combined_score = 0.45 * keyword_score + 0.35 * semantic_score + 0.2 * skill_score
+
+        if (
+            best is None
+            or combined_score > best["score"]
+            or (
+                combined_score == best["score"]
+                and semantic_score > best.get("similarity", 0)
+            )
+        ):
+            best = {
+                "definition": definition,
+                "matches": matches,
+                "skill_matches": skill_matches,
+                "score": combined_score,
+                "similarity": semantic_score,
+            }
+
+    if not best:
+        return _general_job_type()
+
+    combined_matches = list(dict.fromkeys(best["matches"] + best.get("skill_matches", [])))
+    distinct_skill_matches = list(dict.fromkeys(best.get("skill_matches", [])))
+    return {
+        "category": best["definition"]["label"],
+        "category_id": best["definition"]["id"],
+        "confidence": round(best["score"], 3),
+        "matches": combined_matches,
+        "matched_skills": distinct_skill_matches,
+        "similarity": round(best.get("similarity", 0), 3),
+    }
+
+
+def _infer_job_type_from_resume(payload: Dict[str, Any]) -> Dict[str, Any]:
+    skill_tokens = _skill_token_set(payload.get("skills"))
+    skill_param = skill_tokens if skill_tokens else None
+    raw_payload = payload.get("raw")
+    raw_resume_text: str | None = None
+    if isinstance(raw_payload, dict):
+        candidate = raw_payload.get("raw_resume_text") or raw_payload.get("raw_text")
+        if isinstance(candidate, str):
+            raw_resume_text = candidate
+
+    if raw_resume_text:
+        normalized_raw = _normalize_job_description(raw_resume_text)
+        if normalized_raw:
+            raw_result = _infer_job_type_from_description(normalized_raw, skill_tokens=skill_param)
+            confidence = float(raw_result.get("confidence", 0.0) or 0.0)
+            if raw_result.get("category_id") != "general" or confidence >= RAW_RESUME_FALLBACK_CONFIDENCE:
+                return raw_result
+
+    fragments = _collect_classification_fragments(payload)
+    if not fragments:
+        return _infer_job_type_from_description("", skill_tokens=skill_param)
+    text = " ".join(fragments)
+    normalized = _normalize_job_description(text)
+    return _infer_job_type_from_description(normalized, skill_tokens=skill_param)
+
+
+def _build_resume_text(normalized: Dict[str, Any]) -> str:
+    parts: list[str] = []
+    summary = normalized.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        parts.append(summary.strip())
+
+    def _append_entry(entry: Any, keys: list[str]) -> None:
+        if not isinstance(entry, dict):
+            return
+        for key in keys:
+            value = entry.get(key)
+            if isinstance(value, str) and value.strip():
+                parts.append(value.strip())
+        bullets = entry.get("bullets") or entry.get("achievements")
+        if isinstance(bullets, list):
+            for bullet in bullets:
+                if isinstance(bullet, str) and bullet.strip():
+                    parts.append(bullet.strip())
+
+    for experience_item in normalized.get("experience") or []:
+        _append_entry(experience_item, ["role", "company", "title", "organization"])
+    for project in normalized.get("projects") or []:
+        _append_entry(project, ["name", "title", "role"])
+        description = project.get("description") or project.get("summary")
+        if isinstance(description, str) and description.strip():
+            parts.append(description.strip())
+    for skill in normalized.get("skills") or []:
+        if isinstance(skill, str) and skill.strip():
+            parts.append(skill.strip())
+
+    return " ".join(parts)
+
+
+def _cosine_similarity(counter_a: Counter[str], counter_b: Counter[str]) -> float:
+    dot_product = sum(counter_a[token] * counter_b[token] for token in counter_a if token in counter_b)
+    norm_a = math.sqrt(sum(value * value for value in counter_a.values()))
+    norm_b = math.sqrt(sum(value * value for value in counter_b.values()))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot_product / (norm_a * norm_b)
+
+
+def _fit_level(score: float) -> str:
+    if score >= 0.85:
+        return "Excellent fit"
+    if score >= 0.65:
+        return "Strong fit"
+    if score >= 0.4:
+        return "Moderate fit"
+    return "Needs more alignment"
+
+
+def _score_resume_fit(normalized_payload: Dict[str, Any], job_description: str) -> Dict[str, Any]:
+    resume_text = _build_resume_text(normalized_payload or {})
+    resume_tokens = _tokenize_text(resume_text)
+    job_tokens = _tokenize_text(job_description)
+    if not job_tokens:
+        raise ValueError("Job description must contain descriptive keywords to score fit.")
+
+    resume_counts = Counter(resume_tokens)
+    job_counts = Counter(job_tokens)
+    cosine_score = _cosine_similarity(resume_counts, job_counts)
+    coverage = 0.0
+    if job_counts:
+        coverage = len(set(job_counts) & set(resume_counts)) / len(job_counts)
+    blended_score = min(1.0, max(0.0, 0.65 * cosine_score + 0.35 * coverage))
+    matched_tokens = [token for token in sorted(job_counts, key=lambda word: job_counts[word], reverse=True) if token in resume_counts]
+    missing_tokens = [token for token in sorted(job_counts, key=lambda word: job_counts[word], reverse=True) if token not in resume_counts]
+    recommendations: list[str] = []
+    if matched_tokens:
+        recommendations.append("Reinforce the matched concepts with disciplined impact statements around the highlighted experience.")
+    if missing_tokens:
+        sample = ", ".join(missing_tokens[:3])
+        recommendations.append(f"Consider weaving {sample} into your summary or highlights for a tighter match.")
+    if not matched_tokens:
+        recommendations.append("Add more specific achievements that mirror the job description language to raise confidence.")
+
+    return {
+        "score": int(round(blended_score * 100)),
+        "level": _fit_level(blended_score),
+        "matchedKeywords": matched_tokens[:8],
+        "missingKeywords": missing_tokens[:5],
+        "recommendations": recommendations,
+        "metrics": {
+            "cosineSimilarity": cosine_score,
+            "coverage": coverage,
+            "resumeTokenCount": len(resume_tokens),
+            "jobTokenCount": len(job_tokens),
+        },
+    }
 
 def _safe_list(value: Any) -> list[str]:
     if isinstance(value, list):
@@ -282,6 +660,13 @@ def _normalized_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
     phones = _dedupe(phones, key=lambda s: _digits_only(str(s)))
     urls = _dedupe(urls)
 
+    raw_payload: Dict[str, Any] = {}
+    if isinstance(parsed, dict):
+        raw_payload = parsed.copy()
+        raw_text = raw_payload.get("raw_resume_text")
+        if isinstance(raw_text, str) and len(raw_text) > MAX_JOB_DESCRIPTION_LENGTH:
+            raw_payload["raw_resume_text"] = raw_text[:MAX_JOB_DESCRIPTION_LENGTH].rstrip()
+
     payload = {
         "name": parsed.get("name") or "",
         "summary": _collapse_summary(parsed.get("summary")),
@@ -295,15 +680,18 @@ def _normalized_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
             "phones": phones,
             "urls": urls,
         },
-    "embedded_links": parsed.get("embedded_links") or [],
+        "embedded_links": parsed.get("embedded_links") or [],
         "themes": {
             "selected": parsed.get("theme") or THEME_OPTIONS[0]["id"],
             "options": THEME_OPTIONS,
         },
-        "raw": parsed,
+        "raw": raw_payload,
     }
 
     payload["themes"]["options"] = copy.deepcopy(THEME_OPTIONS)
+
+    payload["job_type"] = _infer_job_type(payload)
+    payload["resume_job_type"] = _infer_job_type_from_resume(payload)
 
     return payload
 
@@ -684,6 +1072,24 @@ async def read_portfolio_draft_preview(
     resume = await session.get(ResumeDocument, portfolio.resume_id)
     await _apply_storage_metadata_from_resume(resume, content)
     return {"data": content}
+
+
+@app.get("/api/resumes/{resume_id}/fit")
+async def evaluate_resume_fit(
+    resume_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> Dict[str, Any]:
+    resume = await session.get(ResumeDocument, resume_id)
+    if resume is None:
+        raise HTTPException(status_code=404, detail="Resume not found.")
+
+    normalized_payload = resume.normalized_payload or resume.parsed_payload or {}
+    job_description_source = resume.job_description or _normalize_job_description(normalized_payload.get("job_description"))
+    if not job_description_source:
+        raise HTTPException(status_code=400, detail="Job description is required to evaluate fit.")
+
+    fit = _score_resume_fit(normalized_payload, job_description_source)
+    return {"data": fit}
 
 
 @app.get("/health", tags=["meta"])

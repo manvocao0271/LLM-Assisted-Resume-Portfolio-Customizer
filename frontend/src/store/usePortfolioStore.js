@@ -12,6 +12,18 @@ const initialData = {
   name: '',
   summary: '',
   job_description: '',
+  job_type: {
+    category: 'General',
+    category_id: 'general',
+    confidence: 0,
+    matches: [],
+  },
+  resume_job_type: {
+    category: 'General',
+    category_id: 'general',
+    confidence: 0,
+    matches: [],
+  },
   experience: [],
   education: [],
   projects: [],
@@ -259,8 +271,29 @@ const sanitizeData = (payload) => {
       .filter(Boolean);
   };
 
+  const normalizeJobTypeValue = (value) => {
+    const source = value && typeof value === 'object' ? value : {};
+    const normalizedMatches = Array.isArray(source.matches)
+      ? source.matches
+          .map((item) => (typeof item === 'string' ? item.trim() : ''))
+          .filter(Boolean)
+      : [];
+    const confidence =
+      typeof source.confidence === 'number' && Number.isFinite(source.confidence)
+        ? Math.min(1, Math.max(0, source.confidence))
+        : 0;
+    return {
+      category: typeof source.category === 'string' ? source.category : '',
+      category_id: typeof source.category_id === 'string' ? source.category_id : '',
+      confidence,
+      matches: normalizedMatches,
+    };
+  };
+
   const rawJobDescription = extractText(base.job_description);
   const jobDescription = rawJobDescription.length > 4096 ? `${rawJobDescription.slice(0, 4093)}…` : rawJobDescription;
+  const normalizedJobType = normalizeJobTypeValue(base.job_type);
+  const normalizedResumeJobType = normalizeJobTypeValue(base.resume_job_type);
 
   const normalizedExperience = Array.isArray(base.experience)
     ? base.experience.map((entry) => {
@@ -332,6 +365,8 @@ const sanitizeData = (payload) => {
     ...base,
     summary,
     job_description: jobDescription,
+    job_type: normalizedJobType,
+    resume_job_type: normalizedResumeJobType,
     experience: normalizedExperience,
     projects: normalizedProjects,
     education: normalizedEducation,
