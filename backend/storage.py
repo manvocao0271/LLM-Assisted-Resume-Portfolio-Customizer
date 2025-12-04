@@ -8,6 +8,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
+from time import sleep
 from pathlib import Path
 from typing import Any, Optional
 
@@ -76,6 +77,12 @@ def _ensure_client() -> Any | None:
     return _client
 
 
+def _reset_client() -> None:
+    """Force re-creation of the Supabase client (e.g., after idle or 401)."""
+    global _client
+    _client = None
+
+
 def is_enabled() -> bool:
     """Return True when Supabase credentials are present and the SDK is available."""
 
@@ -125,6 +132,14 @@ def _ensure_success(label: str, response: Any) -> None:
         raise RuntimeError(f"Supabase {label} failed: {payload['error']}")
 
 
+def _should_reinit(status_code: Optional[int]) -> bool:
+    """Return True if the error suggests our client/auth is invalid or expired."""
+    if status_code is None:
+        return False
+    # 401 Unauthorized, 403 Forbidden, 404 Not Found (bucket/path issues) may benefit from re-init
+    return status_code in (401, 403) or status_code == 404
+
+
 def _upload_sync(file_path: Path, original_filename: str) -> Optional[UploadedAsset]:
     client = _ensure_client()
     settings = _load_settings()
@@ -136,13 +151,38 @@ def _upload_sync(file_path: Path, original_filename: str) -> Optional[UploadedAs
     with file_path.open("rb") as fp:
         file_bytes = fp.read()
 
-    storage_client = client.storage.from_(settings.resume_bucket)
-    response = storage_client.upload(
-        object_key,
-        file_bytes,
-        file_options={"contentType": "application/pdf", "upsert": False},
-    )
-    _ensure_success("upload", response)
+    retries = 3
+    delay = 0.5
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, retries + 1):
+        try:
+            client = _ensure_client()
+            if not client:
+                raise RuntimeError("Supabase client unavailable")
+            storage_client = client.storage.from_(settings.resume_bucket)
+            response = storage_client.upload(
+                object_key,
+                file_bytes,
+                file_options={"contentType": "application/pdf", "upsert": False},
+            )
+            status_code = getattr(response, "status_code", None)
+            if status_code is not None and status_code >= 400:
+                # If auth/bucket errors, try a client reset once
+                if _should_reinit(status_code):
+                    logger.warning("Supabase upload returned %s; reinitializing client and retrying (attempt %d)", status_code, attempt)
+                    _reset_client()
+                payload = _safe_json(response)
+                raise RuntimeError(f"Supabase upload failed with status {status_code}: {payload}")
+            # success path
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt < retries:
+                sleep(delay)
+                delay *= 2
+                continue
+            logger.exception("Supabase upload failed for %s after %d attempts: %s", object_key, attempt, exc)
+            raise
 
     signed_url = None
     try:

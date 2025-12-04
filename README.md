@@ -26,7 +26,7 @@ Building public-facing portfolios from résumés usually requires manual reforma
 - Review & Customize steps now feature buffered inputs, HTTPS-only link sanitization, and up/down section reordering that matches the public preview order.
 - A discrete “Preview draft” flow saves the latest edits, opens `/preview/:slug`, and safeguards draft access by requiring both slug and portfolio ID.
 - The experimental schema-first generator translates prompts into deterministic UI specs, offering creative layouts without allowing arbitrary HTML or scripts.
-- Added a job description-driven classifier that blends keyword matching with lightweight semantic similarity, infers the target role, reports the matched keywords, and exposes the confidence and similarity rating so reviewers can align the story before publishing.
+- Job-type classifiers now blend curated keyword matching, skill-token weighting, semantic similarity, and the raw résumé text to infer the most relevant role. The shared taxonomy has expanded beyond general software roles to cover robotics, hardware/electrical, mechanical, civil, aerospace, biomedical, healthcare, and more—reducing false positives like “People & HR” for technical postings.
 - Documentation, build scripts, and environment scaffolding let contributors stand up the full stack quickly (Python backend, React frontend, optional Supabase services).
 
 ## Project status
@@ -41,6 +41,7 @@ What’s already working and what’s left for a minimal publishable MVP.
 - FastAPI backend (`backend/app.py`)
   - `/api/parse` endpoint normalizes parser output for the UI
   - CORS configured; `/health` endpoint; root entrypoint (`app.py`) for `uvicorn app:app`
+- Centralized job-type taxonomy (`backend/job_types.py`) powers both job-description and résumé-based classifiers, including skill-specific weighting and resume/raw-text fallbacks for better engineering coverage.
 - Automatically reruns the tailored summary generation when a job description is provided so the Review & Edit stage starts with content that references the desired role.
 - The tailored summary intentionally stays generalized for the applicant type and omits specific metrics so it can feel reusable across similar openings.
 - Experience/project highlights are also rerun through the same contextual prompt so the Review & Edit stage opens with role-aligned but still non-metric copy.
@@ -50,9 +51,9 @@ What’s already working and what’s left for a minimal publishable MVP.
   - Supabase-aware: when `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` are set, uploads persist PDFs to private Storage buckets
 - Frontend prototype (`frontend/`)
   - Vite + React + Tailwind + Zustand multi-step flow (Upload → Review → Customize → Preview)
-  - Upload step retries common API base URLs and supports `VITE_API_BASE_URL`
+  - Upload step retries common API base URLs, supports `VITE_API_BASE_URL`, stages files locally, and only triggers parsing once you confirm—making it easier to adjust the job description before burning API calls.
   - Upload step lets you paste or drop a job description (optional) so the backend can tailor the normalized data to that role.
-  - Review & Edit now surfaces a role-fit evaluation card that compares the parsed résumé against the provided job description, exposing a similarity score, matched keywords, and short recommendations before publishing.
+  - Review & Edit now surfaces both job-description and résumé-driven job-type cards, alongside the role-fit evaluation card that compares the parsed résumé against the provided job description, exposing a similarity score, matched keywords, and short recommendations before publishing.
 - Dev ergonomics
   - Vite proxy forwards `/api/*` to the backend during dev
   - Root npm scripts (`npm run setup|dev|build|preview`) delegate to the frontend package

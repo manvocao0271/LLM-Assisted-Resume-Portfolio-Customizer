@@ -4,8 +4,8 @@ from __future__ import annotations
 # These lists are consumed by backend.app for both job-description and resume classification.
 JOB_TYPE_DEFINITIONS = [
     {
-        "id": "engineering",
-        "label": "Engineering",
+        "id": "software engineering",
+        "label": "Software Engineering",
         "keywords": [
             "software engineer",
             "engineer",

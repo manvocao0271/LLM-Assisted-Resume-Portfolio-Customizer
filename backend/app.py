@@ -138,6 +138,17 @@ FIT_STOP_WORDS = {
     "those",
     "also",
     "which",
+    # Common prepositions/articles that add noise to fit scoring
+    "in",
+    "to",
+    "by",
+    "of",
+    "or",
+    "on",
+    "at",
+    "as",
+    "a",
+    "an",
     "communicate",
     "experience",
     "skills",
@@ -162,6 +173,8 @@ def _normalize_token_word(token: str) -> str:
     if not token:
         return token
     original = token
+    # Only normalize words longer than 4 chars; shorter words (e.g., "in", "to")
+    # are already filtered by stop words and minimum length checks below.
     if len(token) > 4:
         if token.endswith("ies") and token[-4] not in {"a", "e", "i", "o", "u"}:
             token = f"{token[:-3]}y"
@@ -180,7 +193,8 @@ def _tokenize_text(value: str) -> list[str]:
     candidates = re.findall(r"[a-z0-9]+", value.lower())
     normalized: list[str] = []
     for candidate in candidates:
-        if candidate in FIT_STOP_WORDS or len(candidate) <= 1:
+        # Drop common stop words and very short tokens (<=2 chars)
+        if candidate in FIT_STOP_WORDS or len(candidate) <= 2:
             continue
         normalized.append(_normalize_token_word(candidate))
     return normalized
@@ -318,6 +332,7 @@ def _infer_job_type_from_description(
         return _general_job_type()
 
     best: dict[str, Any] | None = None
+    all_scores: list[float] = []
     for definition in JOB_TYPE_DEFINITIONS:
         matches: list[str] = []
         skill_matches: list[str] = []
@@ -345,6 +360,7 @@ def _infer_job_type_from_description(
         skill_score = len(skill_matches) / max(1, len(skill_keywords)) if skill_keywords else 0.0
 
         combined_score = 0.45 * keyword_score + 0.35 * semantic_score + 0.2 * skill_score
+        all_scores.append(combined_score)
 
         if (
             best is None
@@ -367,10 +383,42 @@ def _infer_job_type_from_description(
 
     combined_matches = list(dict.fromkeys(best["matches"] + best.get("skill_matches", [])))
     distinct_skill_matches = list(dict.fromkeys(best.get("skill_matches", [])))
+    # Normalize confidence using top-2 ratio to avoid extreme 100% values.
+    # confidence = best / (best + second_best) with calibrated caps.
+    normalized_confidence = 0.0
+    scores = sorted([s for s in all_scores if s > 0], reverse=True)
+    if scores:
+        best_score = best["score"]
+        second_best = scores[1] if len(scores) > 1 else 0.0
+        denom = best_score + second_best
+        if denom > 0:
+            ratio = best_score / denom
+            # Calibrate ratio into [0.35, 0.95] to keep realistic bounds
+            # Map linearly, then apply mild boosts for strong evidence.
+            base = max(0.35, min(0.95, ratio))
+            normalized_confidence = base
+            match_strength = len(best.get("matches", [])) + len(best.get("skill_matches", []))
+            if match_strength >= 8:
+                normalized_confidence = min(0.95, normalized_confidence + 0.06)
+            elif match_strength >= 5:
+                normalized_confidence = min(0.92, normalized_confidence + 0.04)
+            elif match_strength >= 3:
+                normalized_confidence = min(0.9, normalized_confidence + 0.02)
+            sim = float(best.get("similarity", 0.0) or 0.0)
+            if sim >= 0.5:
+                normalized_confidence = min(0.95, normalized_confidence + 0.03)
+            elif sim >= 0.3:
+                normalized_confidence = min(0.93, normalized_confidence + 0.02)
+            elif sim >= 0.15:
+                normalized_confidence = min(0.9, normalized_confidence + 0.01)
+    # Fallback boost when everything is zero but we have matches
+    if normalized_confidence == 0.0 and (best["matches"] or best.get("skill_matches")):
+        normalized_confidence = min(0.8, max(0.5, best["score"]))
+
     return {
         "category": best["definition"]["label"],
         "category_id": best["definition"]["id"],
-        "confidence": round(best["score"], 3),
+        "confidence": round(normalized_confidence, 3),
         "matches": combined_matches,
         "matched_skills": distinct_skill_matches,
         "similarity": round(best.get("similarity", 0), 3),
@@ -465,9 +513,10 @@ def _score_resume_fit(normalized_payload: Dict[str, Any], job_description: str) 
     resume_counts = Counter(resume_tokens)
     job_counts = Counter(job_tokens)
     cosine_score = _cosine_similarity(resume_counts, job_counts)
+    # Coverage based on overlap of distinct tokens (already filtered)
     coverage = 0.0
     if job_counts:
-        coverage = len(set(job_counts) & set(resume_counts)) / len(job_counts)
+        coverage = len(set(job_counts) & set(resume_counts)) / len(set(job_counts))
     blended_score = min(1.0, max(0.0, 0.65 * cosine_score + 0.35 * coverage))
     matched_tokens = [token for token in sorted(job_counts, key=lambda word: job_counts[word], reverse=True) if token in resume_counts]
     missing_tokens = [token for token in sorted(job_counts, key=lambda word: job_counts[word], reverse=True) if token not in resume_counts]
@@ -628,11 +677,11 @@ def _normalized_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
             continue
         lower = href.lower()
         if lower.startswith("mailto:"):
-            addr = href.split(":", 1)[1].split("?")[0].strip()
+            addr = href.split(":", 1)[1].split("?", 1)[0].strip()
             if addr:
                 emails.append(addr)
         elif lower.startswith("tel:"):
-            num = href.split(":", 1)[1].split("?")[0].strip()
+            num = href.split(":", 1)[1].split("?", 1)[0].strip()
             if num:
                 phones.append(num)
         else:
@@ -1022,6 +1071,12 @@ async def read_portfolio(
     if portfolio is None:
         raise HTTPException(status_code=404, detail="Portfolio not found.")
     content = copy.deepcopy(portfolio.content)
+    # Refresh classifiers to ensure confidence reflects current normalization
+    try:
+        content["job_type"] = _infer_job_type(content)
+        content["resume_job_type"] = _infer_job_type_from_resume(content)
+    except Exception:
+        pass
     resume = await session.get(ResumeDocument, portfolio.resume_id)
     await _apply_storage_metadata_from_resume(resume, content)
     return {"data": content}
@@ -1043,6 +1098,12 @@ async def read_portfolio_by_slug(
     if portfolio is None:
         raise HTTPException(status_code=404, detail="Portfolio not found.")
     content = copy.deepcopy(portfolio.content)
+    # Refresh classifiers to ensure confidence reflects current normalization
+    try:
+        content["job_type"] = _infer_job_type(content)
+        content["resume_job_type"] = _infer_job_type_from_resume(content)
+    except Exception:
+        pass
     resume = await session.get(ResumeDocument, portfolio.resume_id)
     await _apply_storage_metadata_from_resume(resume, content)
     return {"data": content}
@@ -1069,6 +1130,12 @@ async def read_portfolio_draft_preview(
     if portfolio is None:
         raise HTTPException(status_code=404, detail="Portfolio not found.")
     content = copy.deepcopy(portfolio.content)
+    # Refresh classifiers to ensure confidence reflects current normalization
+    try:
+        content["job_type"] = _infer_job_type(content)
+        content["resume_job_type"] = _infer_job_type_from_resume(content)
+    except Exception:
+        pass
     resume = await session.get(ResumeDocument, portfolio.resume_id)
     await _apply_storage_metadata_from_resume(resume, content)
     return {"data": content}

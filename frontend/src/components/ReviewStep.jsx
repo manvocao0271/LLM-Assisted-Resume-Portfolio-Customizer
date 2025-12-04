@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
 
-import { usePortfolioStore, REVIEW_SECTION_KEYS } from '../store/usePortfolioStore.js';
+import { usePortfolioStore, REVIEW_SECTION_KEYS, resolveApiUrl } from '../store/usePortfolioStore.js';
 
 function SectionCard({ title, description, controls, children }) {
   return (
@@ -98,6 +98,121 @@ function JobTypeCard({ jobType, title = 'Job type classifier', description = 'We
             Add more project or experience detail to help the classifier narrow a match.
           </p>
         ) : null}
+      </div>
+    </section>
+  );
+}
+
+function FitScoreCard() {
+  const data = usePortfolioStore((state) => state.data);
+  const meta = usePortfolioStore((state) => state.meta);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [fit, setFit] = useState(null);
+
+  const canEvaluate = Boolean(meta?.resumeId) && typeof data?.job_description === 'string' && data.job_description.trim().length > 0;
+
+  const fetchFit = async () => {
+    if (!canEvaluate) return;
+    setLoading(true);
+    setError('');
+    try {
+      const url = resolveApiUrl(`/api/resumes/${meta.resumeId}/fit`);
+      const response = await fetch(url);
+      if (!response.ok) {
+        const message = await response.text();
+        throw new Error(message || 'Failed to fetch fit score');
+      }
+      const result = await response.json();
+      setFit(result?.data || null);
+    } catch (err) {
+      console.error(err);
+      setError(err?.message || 'Failed to fetch fit score');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Fetch when resumeId or job description changes
+    if (canEvaluate) {
+      fetchFit();
+    } else {
+      setFit(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta?.resumeId, (data?.job_description || '').slice(0, 200)]);
+
+  const score = typeof fit?.score === 'number' ? Math.max(0, Math.min(100, Math.round(fit.score))) : null;
+  const level = fit?.level || '';
+  const matched = Array.isArray(fit?.matchedKeywords) ? fit.matchedKeywords.slice(0, 8) : [];
+  const missing = Array.isArray(fit?.missingKeywords) ? fit.missingKeywords.slice(0, 5) : [];
+  const metrics = fit?.metrics || {};
+
+  return (
+    <section className="rounded-2xl border border-slate-700 bg-slate-800/70 p-5 shadow-card">
+      <header className="flex items-center justify-between gap-3 border-b border-slate-700/80 pb-2">
+        <div>
+          <h3 className="text-base font-semibold text-white">Role-fit analytics</h3>
+          <p className="text-xs text-slate-400">We compare your résumé against the job description to estimate alignment.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs uppercase tracking-[0.3em] text-slate-500">ML</span>
+          <button
+            type="button"
+            onClick={fetchFit}
+            disabled={!canEvaluate || loading}
+            className="rounded-md border border-slate-600 bg-slate-900/60 px-2 py-1 text-xs font-medium text-slate-300 hover:border-brand-400 hover:text-brand-300 disabled:opacity-40"
+          >
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
+      </header>
+
+      <div className="mt-4 space-y-3 text-sm text-slate-200">
+        {!canEvaluate && (
+          <p className="text-slate-400">Add a job description on upload to enable role-fit scoring.</p>
+        )}
+        {canEvaluate && error && (
+          <p className="text-rose-300">{error}</p>
+        )}
+        {canEvaluate && !error && (
+          <div className="space-y-3">
+            <div className="flex items-baseline gap-3">
+              <span className="text-3xl font-semibold text-white">{score !== null ? `${score}%` : '—'}</span>
+              {level ? <span className="text-xs uppercase tracking-widest text-slate-400">{level}</span> : null}
+            </div>
+            {matched.length ? (
+              <div>
+                <p className="mb-2 text-xs text-slate-400">Matched keywords</p>
+                <div className="flex flex-wrap gap-2">
+                  {matched.map((m) => (
+                    <span key={`m-${m}`} className="rounded-full border border-emerald-700/70 bg-emerald-900/30 px-3 py-1 text-xs text-emerald-200">
+                      {m}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {missing.length ? (
+              <div>
+                <p className="mb-2 text-xs text-slate-400">Missing keywords</p>
+                <div className="flex flex-wrap gap-2">
+                  {missing.map((m) => (
+                    <span key={`x-${m}`} className="rounded-full border border-amber-700/70 bg-amber-900/20 px-3 py-1 text-xs text-amber-200">
+                      {m}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {metrics && (typeof metrics.cosineSimilarity === 'number' || typeof metrics.coverage === 'number') ? (
+              <div className="text-xs text-slate-400">
+                <p>Cosine: {(metrics.cosineSimilarity ?? 0).toFixed(2)} · Coverage: {(metrics.coverage ?? 0).toFixed(2)}</p>
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -632,8 +747,9 @@ export function ReviewStep() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-4 lg:grid-cols-2">
+    <div className="space-y-8">
+      {/* Classifiers section separated from edit cards */}
+      <div className="grid gap-6 lg:grid-cols-3">
         <JobTypeCard
           jobType={jobType}
           title="Job description classifier"
@@ -644,7 +760,9 @@ export function ReviewStep() {
           title="Résumé classifier"
           description="We infer a role focus directly from your résumé text so you can compare it with the job description signal."
         />
+        <FitScoreCard />
       </div>
+      {/* Editable content cards below in distinct section */}
       {sectionEntries.map((section, idx) => {
         const isFirst = idx === 0;
         const isLast = idx === sectionEntries.length - 1;
