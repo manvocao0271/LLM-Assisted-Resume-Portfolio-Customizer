@@ -104,23 +104,38 @@ def _normalize_origin(origin: str) -> str | None:
 
 configured_origins_raw = os.getenv("API_ALLOW_ORIGINS")
 configured_set = set()
+wildcard = False
 if configured_origins_raw:
-    for item in configured_origins_raw.split(","):
-        norm = _normalize_origin(item)
-        if norm:
-            configured_set.add(norm)
+    # Special-case wildcard to allow any origin without credentials
+    if configured_origins_raw.strip() == "*":
+        wildcard = True
+    else:
+        for item in configured_origins_raw.split(","):
+            norm = _normalize_origin(item)
+            if norm:
+                configured_set.add(norm)
 
 # Merge with sensible local defaults
 allowed_origins = sorted(default_origins.union(configured_set))
 
-# When none provided, allow local defaults only (not wildcard) to avoid confusing CORS+credentials behavior
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Configure CORS
+if wildcard:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,  # must be False when using wildcard
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # When none provided, allow local defaults only (not wildcard) to avoid confusing CORS+credentials behavior
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 
 @app.on_event("startup")
