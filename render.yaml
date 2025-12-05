@@ -28,7 +28,7 @@ services:
       - key: API_ALLOW_ORIGINS
         value: ""
 
-  - type: static_site
+  - type: static
     name: portfolio-frontend
     rootDir: frontend
     buildCommand: npm install && npm run build
