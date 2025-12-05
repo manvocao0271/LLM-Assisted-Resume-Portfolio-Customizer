@@ -1211,8 +1211,53 @@ async def evaluate_resume_fit(
 
 
 @app.get("/health", tags=["meta"])
-async def healthcheck() -> Dict[str, str]:
-    return {"status": "ok"}
+async def healthcheck() -> Dict[str, Any]:
+    """Comprehensive health check with environment validation."""
+    issues = []
+    
+    # Check critical environment variables
+    if not os.getenv("OPENAI_API_KEY"):
+        issues.append("OPENAI_API_KEY not set")
+    if not os.getenv("DATABASE_URL"):
+        issues.append("DATABASE_URL not set")
+    
+    # Check optional but recommended variables
+    warnings = []
+    if not os.getenv("SUPABASE_URL"):
+        warnings.append("SUPABASE_URL not set (file uploads will fail)")
+    if not os.getenv("SUPABASE_SERVICE_ROLE_KEY"):
+        warnings.append("SUPABASE_SERVICE_ROLE_KEY not set")
+    
+    return {
+        "status": "ok" if not issues else "degraded",
+        "issues": issues,
+        "warnings": warnings,
+        "model": DEFAULT_MODEL,
+        "base_url": DEFAULT_BASE_URL or "OpenAI default",
+        "dry_run": DEFAULT_DRY_RUN,
+    }
+
+
+@app.get("/", tags=["meta"])
+async def root() -> Dict[str, Any]:
+    """Root endpoint to verify backend is running and show CORS config."""
+    return {
+        "status": "ok",
+        "message": "Resume Portfolio Builder API",
+        "version": "0.1.0",
+        "cors_allowed_origins": allowed_origins,
+        "endpoints": [
+            "POST /api/resumes",
+            "POST /api/parse", 
+            "GET /api/resumes/{resume_id}/fit",
+            "PUT /api/portfolios/{portfolio_id}",
+            "GET /api/portfolios/{portfolio_id}",
+            "GET /api/portfolios/by-slug/{slug}",
+            "GET /api/portfolios/preview/{slug}",
+            "POST /api/generative/preview",
+            "GET /health",
+        ],
+    }
 
 
 # -------- Generative preview (experimental, safe/schema-first) --------
