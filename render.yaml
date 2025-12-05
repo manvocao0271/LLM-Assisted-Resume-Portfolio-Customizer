@@ -5,7 +5,6 @@ services:
     plan: free
     autoDeploy: true
     buildCommand: pip install -r requirements.txt
-    preDeployCommand: alembic upgrade head
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: OPENAI_API_KEY
@@ -27,6 +26,9 @@ services:
       # Set to your frontend origin (e.g., https://your-frontend.onrender.com)
       - key: API_ALLOW_ORIGINS
         value: ""
+      # Use sample data without calling an LLM (free demo)
+      - key: LLM_DRY_RUN
+        value: "1"
 
   - type: web
     name: portfolio-frontend
