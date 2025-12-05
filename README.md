@@ -1,6 +1,399 @@
-# ResumeParser
+# LLM-Assisted Resume Portfolio Builder
 
-Single-file CLI that converts a resume PDF into structured JSON with the help of any OpenAI-compatible LLM.
+A full-stack application that transforms PDF résumés into structured data and customizable portfolio landing pages using LLM-powered parsing, FastAPI backend services, and a React-based editing interface.
+
+---
+
+## Table of Contents
+
+- [Architecture Overview](#architecture-overview)
+- [Project Structure](#project-structure)
+- [How It Works](#how-it-works)
+- [Project Summary](#project-summary)
+
+---
+
+## Architecture Overview
+
+### System Design
+
+This application follows a **three-tier architecture** with clear separation of concerns:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      FRONTEND (React)                        │
+│  - Vite + React 18 + Tailwind CSS                           │
+│  - Zustand for state management                             │
+│  - Multi-step workflow (Upload → Review → Customize)        │
+│  - Deployed as static site on Render                        │
+└─────────────────┬───────────────────────────────────────────┘
+                  │ REST API (JSON)
+                  │ CORS-enabled
+┌─────────────────┴───────────────────────────────────────────┐
+│                    BACKEND (FastAPI)                         │
+│  - Python 3.12 with async/await                             │
+│  - PDF parsing + LLM integration                            │
+│  - SQLAlchemy ORM with Alembic migrations                   │
+│  - Supabase Storage for file uploads                        │
+│  - Deployed on Render (Python web service)                  │
+└─────────────────┬───────────────────────────────────────────┘
+                  │ SQL queries, file uploads
+┌─────────────────┴───────────────────────────────────────────┐
+│                   DATA & STORAGE LAYER                       │
+│  - PostgreSQL (Supabase) - resume/portfolio metadata        │
+│  - Supabase Storage - PDF files and artifacts               │
+│  - SQLite fallback for local development                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Tech Stack
+
+**Frontend**
+- **Framework**: React 18 with Vite for fast builds and hot module replacement
+- **Styling**: Tailwind CSS for utility-first, responsive design
+- **State**: Zustand for lightweight, hook-based state management
+- **Routing**: React Router for multi-page navigation (public portfolios, preview drafts)
+- **Build**: Vite bundles to static files deployed on Render static sites
+
+**Backend**
+- **Framework**: FastAPI for high-performance async Python web services
+- **Database ORM**: SQLAlchemy 2.x with async support
+- **Migrations**: Alembic for version-controlled schema changes
+- **PDF Processing**: PyPDF2 for text extraction and link parsing
+- **LLM Integration**: OpenAI SDK (compatible with Groq, OpenAI, local servers)
+- **Storage**: Supabase Storage SDK for secure file uploads with signed URLs
+
+**Infrastructure**
+- **Deployment**: Render (backend web service + frontend static site)
+- **Database**: Supabase PostgreSQL (managed Postgres with connection pooling)
+- **File Storage**: Supabase Storage (S3-compatible object storage)
+- **Environment**: Environment variables managed through Render dashboard
+
+---
+
+## Project Structure
+
+```
+ResumeParser/
+├── backend/                    # FastAPI backend application
+│   ├── app.py                 # Main FastAPI app with API endpoints
+│   ├── models.py              # SQLAlchemy database models
+│   ├── schemas.py             # Pydantic schemas for request/response validation
+│   ├── database.py            # Database connection and session management
+│   ├── storage.py             # Supabase Storage integration
+│   ├── job_types.py           # Job classification taxonomy and logic
+│   └── classifier_test.py     # Standalone classifier testing tool
+│
+├── frontend/                   # React frontend application
+│   ├── src/
+│   │   ├── App.jsx            # Main app component with routing
+│   │   ├── main.jsx           # Vite entry point
+│   │   ├── components/        # Reusable UI components
+│   │   │   ├── UploadStep.jsx         # PDF upload with job description
+│   │   │   ├── ReviewStep.jsx         # Edit parsed resume data
+│   │   │   ├── CustomizeStep.jsx      # Theme and layout customization
+│   │   │   ├── PreviewPanel.jsx       # Live preview component
+│   │   │   ├── NeonPortfolioPreview.jsx  # Modern portfolio renderer
+│   │   │   └── SchemaRenderer.jsx     # Safe generative layout renderer
+│   │   ├── store/
+│   │   │   └── usePortfolioStore.js   # Zustand state store
+│   │   └── pages/             # Route components
+│   │       ├── PreviewDraft.jsx       # Draft preview page
+│   │       └── PublicPortfolio.jsx    # Published portfolio viewer
+│   ├── public/                # Static assets
+│   ├── package.json           # Frontend dependencies
+│   └── vite.config.js         # Vite configuration with API proxy
+│
+├── alembic/                   # Database migration scripts
+│   ├── versions/              # Migration version files
+│   └── env.py                 # Alembic environment configuration
+│
+├── app.py                     # Uvicorn entry point (imports backend.app)
+├── llm_label_resume.py        # Standalone CLI parser script
+├── requirements.txt           # Python production dependencies
+├── requirements-dev.txt       # Python development dependencies
+├── pyproject.toml            # Python project metadata
+├── alembic.ini               # Alembic configuration
+├── render.yaml               # Render deployment configuration
+├── package.json              # Root npm scripts (forwards to frontend)
+├── .env.example              # Environment variable template
+├── DEPLOYMENT.md             # Detailed deployment guide
+├── TROUBLESHOOTING.md        # Common issues and solutions
+└── README.md                 # This file
+```
+
+### Key Files Explained
+
+**Backend**
+- `backend/app.py` - FastAPI application with all API routes, CORS configuration, and request handlers
+- `backend/models.py` - Database schema: `ResumeDocument` (parsed PDF metadata) and `PortfolioDraft` (user edits)
+- `backend/storage.py` - Supabase Storage wrapper for uploading PDFs and generating signed URLs
+- `backend/job_types.py` - Classification system with 30+ job categories and skill-based matching
+- `llm_label_resume.py` - CLI tool that can be imported or run standalone to parse PDFs with LLMs
+
+**Frontend**
+- `frontend/src/App.jsx` - Main component with step indicator and routing logic
+- `frontend/src/store/usePortfolioStore.js` - Central state management for resume data, theme, and API calls
+- `frontend/src/components/UploadStep.jsx` - File upload with multi-endpoint fallback and job description input
+- `frontend/src/components/ReviewStep.jsx` - Section-by-section editing interface with job fit scoring
+- `frontend/src/components/CustomizeStep.jsx` - Theme picker and section ordering controls
+
+**Infrastructure**
+- `render.yaml` - Infrastructure-as-code for deploying both services to Render
+- `alembic/versions/*` - Database migration history with up/down scripts
+
+---
+
+## How It Works
+
+### 1. Resume Upload & Parsing Flow
+
+```
+User uploads PDF
+       ↓
+Frontend (UploadStep.jsx)
+  - Validates file type and size
+  - Optionally captures job description
+  - Sends to backend via POST /api/resumes
+       ↓
+Backend (app.py)
+  - Saves PDF temporarily
+  - Extracts text with PyPDF2
+  - Sends to LLM with structured prompt
+  - Normalizes JSON response
+       ↓
+LLM (Groq/OpenAI)
+  - Returns structured JSON:
+    {
+      name, contact, summary,
+      education[], experience[],
+      projects[], skills[]
+    }
+       ↓
+Backend Processing
+  - Classifies job type from resume content
+  - If job description provided:
+    * Classifies target role
+    * Generates tailored summary
+    * Rewrites experience bullets
+  - Uploads PDF to Supabase Storage
+  - Saves to PostgreSQL (ResumeDocument + PortfolioDraft)
+       ↓
+Frontend receives response
+  - Stores in Zustand state
+  - Advances to Review step
+```
+
+### 2. Data Review & Editing Flow
+
+```
+Frontend (ReviewStep.jsx)
+  - Displays parsed data in editable sections
+  - Shows job type classification
+  - If job description present:
+    * Calculates fit score (keyword matching)
+    * Shows matched/missing skills
+  - User edits inline
+       ↓
+User clicks "Next"
+  - State updates locally (not saved yet)
+  - Advances to Customize step
+```
+
+### 3. Customization & Preview Flow
+
+```
+Frontend (CustomizeStep.jsx)
+  - User selects theme (Aurora, Midnight, Dawn)
+  - Reorders sections (drag/drop or buttons)
+  - Changes visibility settings
+  - Previews live in PreviewPanel
+       ↓
+User clicks "Save Draft"
+  - Calls PUT /api/portfolios/{portfolio_id}
+  - Backend updates PortfolioDraft.content_json
+       ↓
+User clicks "Preview Full Page"
+  - Opens /preview/:slug in new tab
+  - PreviewDraft.jsx fetches latest draft
+  - Renders with NeonPortfolioPreview component
+```
+
+### 4. Publishing Flow (Future)
+
+```
+User clicks "Publish"
+       ↓
+Backend (PUT /api/portfolios/{id})
+  - Sets status = "published"
+  - Sets visibility = "public"
+  - Generates unique slug
+  - Records published_at timestamp
+       ↓
+Frontend redirects to /p/:slug
+  - PublicPortfolio.jsx renders final page
+  - SEO-optimized, shareable link
+```
+
+### 5. Database Schema
+
+```sql
+-- Resume metadata and parsed content
+CREATE TABLE resume_documents (
+    id UUID PRIMARY KEY,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    original_filename VARCHAR(255),
+    job_description TEXT,
+    file_size INTEGER,
+    storage_bucket VARCHAR(128),    -- Supabase bucket name
+    storage_path VARCHAR(512),      -- File path in bucket
+    storage_uploaded_at TIMESTAMP,
+    llm_model VARCHAR(120),         -- e.g., "llama-3.1-8b-instant"
+    dry_run BOOLEAN,
+    parsed_payload JSONB,           -- Raw LLM output
+    normalized_payload JSONB        -- Cleaned and structured data
+);
+
+-- User's editable portfolio draft
+CREATE TABLE portfolio_drafts (
+    id UUID PRIMARY KEY,
+    resume_id UUID REFERENCES resume_documents(id),
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    slug VARCHAR(255) UNIQUE,       -- URL-safe identifier
+    status VARCHAR(20),             -- "draft" or "published"
+    visibility VARCHAR(20),         -- "private", "unlisted", "public"
+    published_at TIMESTAMP,
+    content_json JSONB              -- User's edited content + theme
+);
+```
+
+### 6. API Endpoints
+
+| Method | Endpoint | Purpose | Auth |
+|--------|----------|---------|------|
+| `POST` | `/api/resumes` | Upload PDF, parse with LLM, save to DB | None (future: required) |
+| `POST` | `/api/parse` | Legacy parsing endpoint (similar to above) | None |
+| `GET` | `/api/resumes/{id}/fit` | Calculate resume-job fit score | None (future: required) |
+| `GET` | `/api/portfolios/{id}` | Fetch draft by ID | None (future: owner only) |
+| `PUT` | `/api/portfolios/{id}` | Update draft (save edits) | None (future: owner only) |
+| `GET` | `/api/portfolios/by-slug/{slug}` | Fetch published portfolio | Public |
+| `GET` | `/api/portfolios/preview/{slug}` | Fetch draft preview | None (requires portfolio_id param) |
+| `POST` | `/api/generative/preview` | Generate layout from prompt | None |
+| `GET` | `/health` | Backend health check with env validation | Public |
+| `GET` | `/` | API info and CORS configuration | Public |
+
+### 7. State Management (Frontend)
+
+The Zustand store (`usePortfolioStore.js`) manages:
+
+```javascript
+{
+  // Multi-step flow
+  step: 0,  // 0=Upload, 1=Review, 2=Customize
+  
+  // Upload state
+  rawFile: File | null,
+  uploadStatus: 'idle' | 'ready' | 'uploading' | 'parsed' | 'error',
+  
+  // Parsed data
+  name: string,
+  summary: string,
+  contact: { emails[], phones[], urls[] },
+  experience: Array<{ role, company, period, bullets[] }>,
+  education: Array<{ institution, degree, dates }>,
+  projects: Array<{ name, description, link }>,
+  skills: string[],
+  
+  // Job classification
+  job_type: { category, confidence, matches[] },
+  resume_job_type: { category, confidence, matches[] },
+  job_description: string,
+  
+  // Customization
+  themes: { selected: 'aurora', options: [...] },
+  layout: { sectionOrder: string[] },
+  
+  // Metadata
+  meta: {
+    resume_id: UUID,
+    portfolio_id: UUID,
+    status: 'draft' | 'published',
+    visibility: 'private' | 'unlisted' | 'public',
+    slug: string
+  }
+}
+```
+
+### 8. Environment Variables
+
+**Backend (.env)**
+```bash
+# Required
+OPENAI_API_KEY=gsk_...              # Groq or OpenAI API key
+DATABASE_URL=postgresql+asyncpg://... # Postgres connection string
+
+# Optional (Supabase)
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=eyJ...
+SUPABASE_RESUME_BUCKET=resumes
+SUPABASE_ARTIFACT_BUCKET=artifacts
+
+# Optional (customization)
+OPENAI_BASE_URL=https://api.groq.com/openai/v1  # LLM provider
+MODEL_NAME=llama-3.1-8b-instant                  # Default model
+LLM_DRY_RUN=0                                    # 1 = skip LLM calls
+API_ALLOW_ORIGINS=https://your-frontend.com      # CORS origins
+```
+
+**Frontend (.env or Render)**
+```bash
+VITE_API_BASE_URL=https://your-backend.com  # Backend URL (baked into build)
+```
+
+### 9. Deployment Architecture (Render)
+
+```
+GitHub Repository (main branch)
+       ↓ (auto-deploy on push)
+┌──────────────────────────────────────────────┐
+│  Render Blueprint (render.yaml)              │
+├──────────────────────────────────────────────┤
+│                                              │
+│  ┌─────────────────┐  ┌──────────────────┐ │
+│  │ Backend Service │  │ Frontend Service │ │
+│  │ (Python)        │  │ (Static Site)    │ │
+│  │                 │  │                  │ │
+│  │ Build:          │  │ Build:           │ │
+│  │  pip install    │  │  npm install     │ │
+│  │                 │  │  npm run build   │ │
+│  │ Start:          │  │                  │ │
+│  │  uvicorn app    │  │ Serve: dist/     │ │
+│  └────────┬────────┘  └────────┬─────────┘ │
+│           │                    │            │
+└───────────┼────────────────────┼────────────┘
+            │                    │
+            │                    │
+┌───────────┴────────────────────┴────────────┐
+│         External Services                   │
+│  - Supabase PostgreSQL (database)           │
+│  - Supabase Storage (file uploads)          │
+│  - Groq API (LLM inference)                 │
+└─────────────────────────────────────────────┘
+```
+
+**Deployment URLs:**
+- Backend: `https://portfolio-backend-xxxx.onrender.com`
+- Frontend: `https://portfolio-frontend-xxxx.onrender.com`
+
+**How URLs Connect:**
+1. Frontend's `VITE_API_BASE_URL` is set to backend URL (hardcoded in render.yaml)
+2. Backend's `API_ALLOW_ORIGINS` is set to frontend URL (hardcoded in render.yaml)
+3. Vite bakes `VITE_API_BASE_URL` into JavaScript bundle at build time
+4. Backend validates CORS using configured origins at runtime
+
+---
 
 ## Project Summary
 
