@@ -23,9 +23,11 @@ services:
         value: resumes
       - key: SUPABASE_ARTIFACT_BUCKET
         value: artifacts
-      # Set to your frontend origin (e.g., https://your-frontend.onrender.com)
+      # IMPORTANT: Set this to your actual frontend URL after deployment
+      # Example: https://portfolio-frontend-9l3a.onrender.com
+      # You can also use comma-separated values for multiple origins
       - key: API_ALLOW_ORIGINS
-        value: ""
+        sync: false
       # Use the real LLM (Groq free tier)
       - key: LLM_DRY_RUN
         value: "0"
@@ -37,6 +39,7 @@ services:
     buildCommand: npm install && npm run build
     staticPublishPath: dist
     envVars:
-      # Set to your backend base URL (e.g., https://your-backend.onrender.com)
+      # IMPORTANT: Set this to your actual backend URL after deployment
+      # Example: https://portfolio-backend-xmzb.onrender.com
       - key: VITE_API_BASE_URL
-        value: ""
+        sync: false
