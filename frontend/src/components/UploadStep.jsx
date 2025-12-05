@@ -130,7 +130,7 @@ export function UploadStep() {
           ? lastNetworkError.message
           : 'Could not reach the résumé parsing service.';
       throw new Error(
-        `${networkMessage} Ensure the backend is running on http://localhost:8000 or set VITE_API_BASE_URL. Current origin: ${window.location.origin}. API base: ${fromEnv || 'not set'}.`,
+        `${networkMessage} Ensure the backend is running on http://localhost:8000 or set VITE_API_BASE_URL. Current origin: ${window.location.origin}. API base: ${normalizedBaseUrl || 'not set'}.`,
       );
     } catch (apiError) {
       console.error(apiError);
