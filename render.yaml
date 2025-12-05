@@ -25,11 +25,11 @@ services:
         value: artifacts
       - key: API_ALLOW_ORIGINS
         fromService:
-          type: static
+          type: static_site
           name: portfolio-frontend
           property: url
 
-  - type: static
+  - type: static_site
     name: portfolio-frontend
     rootDir: frontend
     buildCommand: npm ci && npm run build
