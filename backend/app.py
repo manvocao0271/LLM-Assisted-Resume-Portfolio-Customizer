@@ -961,7 +961,9 @@ async def _process_resume_request(
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - catch-all for demo hardening
-        raise HTTPException(status_code=500, detail="Failed to parse resume.") from exc
+        logger.exception("Resume parsing failed with unexpected error")
+        error_detail = f"Failed to parse resume: {type(exc).__name__}: {str(exc)}"
+        raise HTTPException(status_code=500, detail=error_detail) from exc
     else:
         if job_description_text:
             parsed.setdefault("job_description", job_description_text)
