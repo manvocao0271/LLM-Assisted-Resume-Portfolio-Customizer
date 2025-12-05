@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from logging.config import fileConfig
 from typing import Any
 
@@ -14,7 +15,13 @@ import backend.models  # noqa: F401  # ensure models are registered
 
 config = context.config
 if config.config_ini_section:
-    config.set_main_option("sqlalchemy.url", DATABASE_URL)
+    # Pull DATABASE_URL from environment at runtime so CLI overrides apply
+    url = os.getenv("DATABASE_URL")
+    if not url:
+        raise RuntimeError("DATABASE_URL must be set before running Alembic commands")
+    config.set_main_option("sqlalchemy.url", url)
+
+DATABASE_URL = config.get_main_option("sqlalchemy.url")
 
 if config.config_file_name:
     fileConfig(config.config_file_name)
@@ -62,6 +69,10 @@ def run_migrations_online() -> None:
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args={
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        },
     )
 
     async def _run_migrations() -> None:

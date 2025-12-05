@@ -25,6 +25,8 @@ portfolio_visibility = sa.Enum("private", "unlisted", "public", name="portfolio_
 
 def upgrade() -> None:
     bind = op.get_bind()
+    op.execute("DROP TYPE IF EXISTS portfolio_status CASCADE")
+    op.execute("DROP TYPE IF EXISTS portfolio_visibility CASCADE")
     portfolio_status.create(bind, checkfirst=True)
     portfolio_visibility.create(bind, checkfirst=True)
 

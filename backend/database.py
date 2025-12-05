@@ -29,7 +29,17 @@ class Base(DeclarativeBase):
 
 
 def _create_engine(url: str):
-    return create_async_engine(url, future=True, echo=ECHO_SQL, pool_pre_ping=True)
+    suppress_prepared_statements = {
+        "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
+    }
+    return create_async_engine(
+        url,
+        future=True,
+        echo=ECHO_SQL,
+        pool_pre_ping=True,
+        connect_args=suppress_prepared_statements,
+    )
 
 
 def _create_session_factory(url: str):

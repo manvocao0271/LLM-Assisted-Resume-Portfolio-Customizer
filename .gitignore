@@ -15,6 +15,8 @@ llm_raw.txt
 resumeparser.db
 *.db
 
+logs.txt
+
 # Frontend/node artifacts
 frontend/node_modules/
 frontend/dist/
