@@ -12,7 +12,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -70,17 +70,53 @@ default_origins = {
     "http://127.0.0.1:5174",
 }
 
-configured_origins = os.getenv("API_ALLOW_ORIGINS")
-if configured_origins:
-    allowed_origins = {origin.strip() for origin in configured_origins.split(",") if origin.strip()}
-else:
-    allowed_origins = set()
+def _normalize_origin(origin: str) -> str | None:
+    """
+    Normalize and validate a single origin string.
 
-allowed_origins = sorted(default_origins.union(allowed_origins))
+    - Trims whitespace
+    - Fixes accidental double scheme like "https://https://..."
+    - Removes trailing slashes
+    - Only allows http/https schemes
+    Returns None when invalid.
+    """
+    if not origin:
+        return None
+    o = origin.strip()
 
+    # Fix common typo: duplicated scheme
+    if o.startswith("https://https://"):
+        o = o.replace("https://https://", "https://", 1)
+    if o.startswith("http://http://"):
+        o = o.replace("http://http://", "http://", 1)
+
+    # Remove trailing slash
+    o = o.rstrip("/")
+
+    # Basic validation
+    if not (o.startswith("http://") or o.startswith("https://")):
+        return None
+    # Disallow wildcard here; FastAPI requires explicit origins when credentials are allowed
+    if o == "*":
+        return None
+    return o
+
+
+configured_origins_raw = os.getenv("API_ALLOW_ORIGINS")
+configured_set = set()
+if configured_origins_raw:
+    for item in configured_origins_raw.split(","):
+        norm = _normalize_origin(item)
+        if norm:
+            configured_set.add(norm)
+
+# Merge with sensible local defaults
+allowed_origins = sorted(default_origins.union(configured_set))
+
+# When none provided, allow local defaults only (not wildcard) to avoid confusing CORS+credentials behavior
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins or ["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
