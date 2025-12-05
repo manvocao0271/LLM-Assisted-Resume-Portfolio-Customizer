@@ -16,6 +16,7 @@ resumeparser.db
 *.db
 
 logs.txt
+errors.txt
 
 # Frontend/node artifacts
 frontend/node_modules/

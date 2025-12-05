@@ -19,16 +19,24 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-portfolio_status = sa.Enum("draft", "published", name="portfolio_status")
-portfolio_visibility = sa.Enum("private", "unlisted", "public", name="portfolio_visibility")
+portfolio_status = sa.Enum(
+    "draft",
+    "published",
+    name="portfolio_status",
+    schema="public",
+)
+portfolio_visibility = sa.Enum(
+    "private",
+    "unlisted",
+    "public",
+    name="portfolio_visibility",
+    schema="public",
+)
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    op.execute("DROP TYPE IF EXISTS portfolio_status CASCADE")
-    op.execute("DROP TYPE IF EXISTS portfolio_visibility CASCADE")
-    portfolio_status.create(bind, checkfirst=True)
-    portfolio_visibility.create(bind, checkfirst=True)
+    op.execute("DROP TYPE IF EXISTS public.portfolio_status CASCADE")
+    op.execute("DROP TYPE IF EXISTS public.portfolio_visibility CASCADE")
 
     op.create_table(
         "resume_documents",
