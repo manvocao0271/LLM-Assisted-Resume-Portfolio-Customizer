@@ -92,12 +92,22 @@ export function UploadStep() {
           continue;
         }
 
-        const text = await response.text();
+        const contentType = response.headers.get('content-type') || '';
         let payload = null;
-        try {
-          payload = text ? JSON.parse(text) : null;
-        } catch (parseError) {
-          console.warn('Unable to parse API response JSON', parseError);
+        if (contentType.includes('application/json')) {
+          try {
+            payload = await response.json();
+          } catch (parseError) {
+            console.warn('Unable to parse API JSON', parseError);
+          }
+        } else {
+          const text = await response.text();
+          try {
+            payload = text ? JSON.parse(text) : null;
+          } catch (parseError) {
+            console.warn('Unable to parse API response as JSON', parseError);
+            console.warn('Response preview:', text?.slice(0, 200));
+          }
         }
 
         if (!response.ok) {
@@ -106,7 +116,7 @@ export function UploadStep() {
         }
 
         if (!payload?.data) {
-          throw new Error('Unexpected API response.');
+          throw new Error(`Unexpected API response. Status: ${response.status}. Endpoint: ${endpoint}.`);
         }
 
         setParsedData(payload.data);
