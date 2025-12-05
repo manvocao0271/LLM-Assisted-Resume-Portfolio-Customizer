@@ -23,11 +23,9 @@ services:
         value: resumes
       - key: SUPABASE_ARTIFACT_BUCKET
         value: artifacts
+      # Set to your frontend origin (e.g., https://your-frontend.onrender.com)
       - key: API_ALLOW_ORIGINS
-        fromService:
-          type: static_site
-          name: portfolio-frontend
-          property: url
+        value: ""
 
   - type: static_site
     name: portfolio-frontend
@@ -35,8 +33,6 @@ services:
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     envVars:
+      # Set to your backend base URL (e.g., https://your-backend.onrender.com)
       - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: portfolio-backend
-          property: url
+        value: ""
