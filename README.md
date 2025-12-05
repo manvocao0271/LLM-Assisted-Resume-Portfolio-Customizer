@@ -78,24 +78,17 @@ What’s already working and what’s left for a minimal publishable MVP.
 - CI/CD
   - GitHub Actions for lint/test/build; deploy frontend (Vercel) and backend (Render/Fly)
 - Cache & rate limits (optional)
+  # LLM‑Assisted Résumé → Portfolio Customizer
   - Upstash Redis: prompt/result cache by PDF hash; simple per-user quotas
 
 If you want this scaffolded automatically, start with DB models + three endpoints, then wire Review/Customize to save+load.
 
-## Requirements
-
-- Python 3.10+
-- `pip install -r requirements.txt`
-
-## Setup
 
 1. Copy the sample environment file and set your credentials:
-   ```zsh
    cp .env.example .env
    # edit .env to add your API key / defaults
   # Optional Supabase integration (storage + Postgres)
   SUPABASE_URL=https://your-project.supabase.co
-  SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
   SUPABASE_RESUME_BUCKET=resumes
   SUPABASE_ARTIFACT_BUCKET=artifacts
    ```
@@ -109,20 +102,14 @@ python3 llm_label_resume.py "resume.pdf"
 ```
 - `.env` should include:
   - `OPENAI_API_KEY=your_groq_key`
-  - `OPENAI_BASE_URL=https://api.groq.com/openai/v1`
   - `MODEL_NAME=llama-3.1-8b-instant`
 
 OpenAI cloud (paid):
 ```zsh
-export OPENAI_API_KEY=sk-your-openai-key
 python3 llm_label_resume.py "resume.pdf" --model gpt-4o-mini
 ```
 
 Any OpenAI-compatible server (LM Studio, Ollama, etc.):
-```zsh
-python3 llm_label_resume.py "resume.pdf" \
-  --base-url http://localhost:11434/v1 \
-  --model mistral:7b-instruct
 ```
 
 Dry run (no API call):
@@ -144,9 +131,6 @@ python3 llm_label_resume.py --help
 Key flags:
 - `--model` – override default model (otherwise falls back to `MODEL_NAME` or `gpt-4o-mini`)
 - `--base-url` – custom endpoint, blank uses OpenAI cloud
-- `--output-json` – change output filename (default `labeled_resume.json`)
-- `--dry-run` – skip network call, emit stub payload for testing
-- `--job-description` – paste the target job/role description to nudge the parser toward the hiring criteria
 - `--job-description-file` – path to a text file with the job description (overrides `--job-description`)
 
 ### Environment variables
@@ -155,13 +139,6 @@ Key flags:
 - `MODEL_NAME` (optional default model)
 - `FORCE_JSON` – set to `0` if your provider rejects `response_format`
 - `DEBUG_JSON` – set to any value to dump raw responses to `llm_raw.txt` when JSON parsing fails
-- `SUPABASE_URL` – project URL (optional; enable Supabase Storage + Postgres)
-- `SUPABASE_SERVICE_ROLE_KEY` – service role key used by the backend for storage and DB access
-- `SUPABASE_RESUME_BUCKET` – bucket name for uploaded PDFs (defaults to `resumes` when unset)
-- `SUPABASE_ARTIFACT_BUCKET` – bucket for generated assets (defaults to `artifacts` when unset)
-
-All of these keys are scaffolded in `.env.example`; copy the file and fill in the values that apply to your environment.
-
 ## Output
 
 `labeled_resume.json` contains:
@@ -199,6 +176,24 @@ npm install
 npm run dev
 ```
 
+### Linting & formatting
+
+Frontend (ESLint + Prettier):
+```zsh
+cd frontend
+npm i -D eslint eslint-plugin-react eslint-plugin-react-hooks eslint-plugin-jsx-a11y eslint-plugin-import prettier eslint-config-prettier eslint-plugin-prettier
+npm run lint
+npm run format
+```
+
+Python (Ruff + Black):
+```zsh
+pip install -r requirements-dev.txt
+ruff check .
+black .
+```
+```
+
 The build output lives in `frontend/dist` after running `npm run build`, and the command still succeeds with the neon preview wired into the pages.
 
 While you are refining résumé data the review page now calls `/api/resumes/{resume_id}/fit` when a job description is present. This ML analysis returns a percentage match, highlights which keywords already align, and surfaces quick suggestions so you can tailor the draft before publishing.
@@ -215,19 +210,8 @@ Published portfolios are served client-side at `/p/:slug` (for example `http://l
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r ../requirements.txt
-uvicorn app:app --reload
-```
-
-Once the virtual environment is activated you can stay at the repository root and launch the API as `uvicorn app:app --reload`; the top-level `app.py` simply re-exports the FastAPI instance from `backend/app.py` for convenience.
-
-By default the server trusts `LLM_DRY_RUN=0` (real LLM call). For demos without an API key set `LLM_DRY_RUN=1` to return structured stubs while still extracting hyperlinks. Adjust CORS via `API_ALLOW_ORIGINS` and override the model/base URL with `MODEL_NAME` and `OPENAI_BASE_URL`.
-
-Key endpoints and payloads:
 - `POST /api/resumes` – preferred upload endpoint. Parses the PDF, persists a `resume_document` & `portfolio_draft`, and returns normalized data plus `meta.resume_id` / `meta.portfolio_id` for follow-up calls.
 - `POST /api/resumes` – preferred upload endpoint. Accepts the resume PDF plus an optional `job_description` field so the parser knows the role you are targeting; the response still returns normalized data plus `meta.resume_id` / `meta.portfolio_id`.
-- `POST /api/parse` – legacy alias retained for the existing frontend; identical behavior to `/api/resumes`.
-- `PUT /api/portfolios/{portfolio_id}` – saves review/customization edits. The request body should include the same normalized structure returned from upload.
 - `GET /api/portfolios/{portfolio_id}` – fetches the latest draft payload for authenticated/editor flows.
 - `GET /api/portfolios/by-slug/{slug}` – public read model (only returns `published` + non-`private` portfolios).
 - `GET /api/resumes/{resume_id}/fit` – ML-powered resume vs job description similarity that returns a match score, matched keywords, missing keywords, and tactical suggestions for sharpening the narrative.
@@ -236,25 +220,19 @@ Every response includes a `meta` block with `resume_id`, `portfolio_id`, and cur
 
 When `LLM_DRY_RUN=1` is enabled, the parser will first look for a locally saved `labeled_resume.json` and reuse it so the UI fills with real-looking content. If that file is missing it falls back to an illustrative sample résumé.
 
-Point the frontend at the API by creating `frontend/.env.local`:
-
-```zsh
 VITE_API_BASE_URL=http://localhost:8000
 ```
-
 During local development a Vite dev proxy forwards `/api/*` calls to `http://localhost:8000`, so the extra `.env` file is optional unless you are pointing at a remote backend or building for production.
 
 ### Database & migrations
 
 - Set `DATABASE_URL` in `.env` when you are ready to use Postgres (example: `postgresql+asyncpg://user:pass@localhost:5432/resumeparser`). If the variable is omitted, the backend falls back to a local SQLite file `resumeparser.db`.
 - Apply migrations with Alembic from the project root:
-  ```zsh
   alembic upgrade head
   ```
 - Generate future schema changes with:
   ```zsh
   alembic revision --autogenerate -m "describe change"
-  ```
 - If you hit `ValueError: the greenlet library is required`, reinstall the backend deps after pulling updates:
   ```zsh
   pip install -r requirements.txt
@@ -265,12 +243,7 @@ During local development a Vite dev proxy forwards `/api/*` calls to `http://loc
 
 1. Create a Supabase project (the free tier is enough for prototyping) and grab the **project URL** and **service role key**.
 2. In Supabase &rarr; Storage, create two **private** buckets (defaults used by the app are `resumes` for uploads and `artifacts` for generated assets).
-3. Set the following in `.env` (in addition to `DATABASE_URL`):
-  ```ini
-  SUPABASE_URL=https://your-project.supabase.co
-  SUPABASE_SERVICE_ROLE_KEY=service-role-key
   SUPABASE_RESUME_BUCKET=resumes
-  SUPABASE_ARTIFACT_BUCKET=artifacts
   ```
   Use the Supabase connection string (from Project Settings &rarr; Database) for `DATABASE_URL`, replacing the driver prefix with `postgresql+asyncpg://`.
 4. Apply migrations so the managed Postgres instance is up to date:
@@ -447,6 +420,3 @@ Build a web application that transforms PDF résumés into customizable, public 
 - Mobile Lighthouse score ≥ 90 across all themes
 - Robust parsing for >95% of common résumé PDF formats
 - At least 60% of users return to update or republish their portfolios
-
-npm run dev
-LLM_DRY_RUN=0 uvicorn app:app --port 8000

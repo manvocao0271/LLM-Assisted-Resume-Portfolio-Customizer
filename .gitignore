@@ -13,11 +13,13 @@ labeled_resume.json
 llm_raw.txt
 *.pdf
 resumeparser.db
+*.db
 
 # Frontend/node artifacts
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
+frontend/.eslintcache
 
 # General node modules fallback
 node_modules/
