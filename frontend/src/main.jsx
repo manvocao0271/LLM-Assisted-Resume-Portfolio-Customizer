@@ -1,3 +1,4 @@
+// Resume Portfolio Builder - Main Entry Point
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
