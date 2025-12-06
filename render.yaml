@@ -39,6 +39,13 @@ services:
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /preview/*
+        destination: /index.html
+      - type: rewrite
+        source: /p/*
+        destination: /index.html
     envVars:
       # IMPORTANT: Set this to your actual backend URL after deployment
       # Example: https://portfolio-backend-xmzb.onrender.com
