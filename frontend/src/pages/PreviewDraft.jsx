@@ -22,19 +22,25 @@ export default function PreviewDraftPage() {
   useEffect(() => {
     let cancelled = false;
     async function run() {
+      console.log('Fetching preview from:', fetchUrl);
       setState((s) => ({ ...s, loading: true, error: '' }));
       try {
         const res = await fetch(fetchUrl);
+        console.log('Preview response status:', res.status);
         if (!res.ok) {
-          throw new Error(await res.text());
+          const errorText = await res.text();
+          console.error('Preview fetch failed:', res.status, errorText);
+          throw new Error(errorText || `HTTP ${res.status}: Failed to load preview`);
         }
         const json = await res.json();
+        console.log('Preview data received:', json);
         const data = json?.data || null;
         const spec = data?.generatedSpec || null;
         if (!cancelled) {
           setState({ loading: false, error: '', data, spec });
         }
       } catch (err) {
+        console.error('Preview error:', err);
         if (!cancelled) setState({ loading: false, error: err?.message || 'Failed to load preview', data: null, spec: null });
       }
     }

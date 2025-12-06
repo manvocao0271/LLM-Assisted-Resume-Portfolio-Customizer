@@ -47,15 +47,15 @@ export function PreviewPanel() {
     <div className="mt-8 grid w-full gap-4 rounded-3xl border border-brand-500/30 bg-slate-950/60 p-6 shadow-card">
       <div className="space-y-2 rounded-2xl border border-brand-500/50 bg-slate-900/80 p-4">
         <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Preview</p>
-        <p className="text-sm text-slate-300">Open an unpublished preview in a new tab using your current slug.</p>
+        <p className="text-sm text-slate-300">Open an unpublished preview in a new tab. A slug will be auto-generated if not set.</p>
         <button
           type="button"
           onClick={openPreviewDraft}
-          disabled={!meta?.slug || saveState === 'saving'}
+          disabled={saveState === 'saving'}
           className={clsx(
             'rounded-full px-4 py-2 text-sm font-semibold text-white transition',
             'bg-gradient-to-r from-brand-500 via-brand-400 to-accent-400 shadow-lg shadow-brand-500/30',
-            (!meta?.slug || saveState === 'saving')
+            saveState === 'saving'
               ? 'opacity-60'
               : 'hover:from-brand-400 hover:via-brand-300 hover:to-accent-300'
           )}

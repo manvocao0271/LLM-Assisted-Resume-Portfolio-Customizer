@@ -53,6 +53,16 @@ export function PortfolioPreviewFrame({ children }) {
 }
 
 export function PortfolioPreview({ data }) {
+  // Add safety check
+  if (!data && typeof data !== 'object') {
+    return (
+      <div className="rounded-2xl border border-rose-500/30 bg-rose-950/20 p-8 text-rose-200">
+        <h3 className="text-lg font-semibold mb-2">No Data Available</h3>
+        <p className="text-sm">The portfolio data could not be loaded. Please try refreshing the page.</p>
+      </div>
+    );
+  }
+
   const theme = useMemo(() => {
     const options = Array.isArray(data?.themes?.options) && data.themes.options.length > 0
       ? data.themes.options

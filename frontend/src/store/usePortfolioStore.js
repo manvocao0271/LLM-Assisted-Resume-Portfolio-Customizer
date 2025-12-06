@@ -636,12 +636,40 @@ export const usePortfolioStore = create((set, get) => ({
     }
   },
   openPreviewDraft: async () => {
-    const { meta } = get();
-    if (!meta.slug) return false;
+    const { meta, data } = get();
+    
+    // Auto-generate slug from name if missing
+    if (!meta.slug) {
+      const name = data?.name || 'portfolio';
+      const generatedSlug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9-]/g, '-')
+        .replace(/-{2,}/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 50) || 'my-portfolio';
+      
+      // Set the slug
+      get().setMeta((previous) => ({ ...previous, slug: generatedSlug }));
+    }
+    
+    // Ensure we have a portfolioId
+    if (!meta.portfolioId && !get().meta.portfolioId) {
+      console.error('Cannot preview: no portfolio ID available');
+      return false;
+    }
+    
     const saved = await get().saveDraft();
-    if (!saved) return false;
+    if (!saved) {
+      console.error('Failed to save draft before preview');
+      return false;
+    }
+    
+    const currentMeta = get().meta;
     const origin = typeof window !== 'undefined' ? window.location.origin.replace(/\/$/, '') : '';
-    const url = `${origin}/preview/${meta.slug}?portfolio_id=${encodeURIComponent(meta.portfolioId)}`;
+    const url = `${origin}/preview/${currentMeta.slug}?portfolio_id=${encodeURIComponent(currentMeta.portfolioId)}`;
+    
+    console.log('Opening preview:', url);
+    
     if (typeof window !== 'undefined') {
       window.open(url, '_blank', 'noopener,noreferrer');
     }

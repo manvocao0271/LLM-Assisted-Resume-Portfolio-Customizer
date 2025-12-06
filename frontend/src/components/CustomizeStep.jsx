@@ -93,15 +93,15 @@ export function CustomizeStep() {
         </div>
         <div className="mt-6 space-y-2 rounded-2xl border border-slate-700 bg-slate-900/80 p-4">
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Preview draft</p>
-          <p className="text-sm text-slate-300">Open your current draft in a new tab once you have picked a slug.</p>
+          <p className="text-sm text-slate-300">Open your current draft in a new tab. A slug will be auto-generated from your name if not set.</p>
           <button
             type="button"
             onClick={openPreviewDraft}
-            disabled={!meta?.slug || saveState === 'saving'}
+            disabled={saveState === 'saving'}
             className={clsx(
               'rounded-full px-4 py-2 text-sm font-semibold text-white transition',
               'bg-gradient-to-r from-brand-400 to-pink-500 shadow-lg shadow-brand-500/20',
-              (!meta?.slug || saveState === 'saving') ? 'opacity-60' : 'hover:from-brand-300 hover:to-pink-400'
+              saveState === 'saving' ? 'opacity-60' : 'hover:from-brand-300 hover:to-pink-400'
             )}
           >
             {saveState === 'saving' ? 'Saving…' : 'Preview draft'}
