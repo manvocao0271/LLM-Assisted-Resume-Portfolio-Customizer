@@ -467,8 +467,11 @@ export const usePortfolioStore = create((set, get) => ({
   setRawFile: (file) => set({ rawFile: file }),
   setUploadStatus: (status) => set({ uploadStatus: status }),
   setParsedData: (payload) => {
+    console.log('[setParsedData] Received payload:', JSON.stringify(payload).slice(0, 500));
     const sanitized = sanitizeData(payload);
+    console.log('[setParsedData] Sanitized meta:', sanitized.meta);
     const nextMeta = extractMeta(sanitized.meta, get().meta);
+    console.log('[setParsedData] Extracted meta:', nextMeta);
     // derive review order from payload layout if present
     const nextOrder = normalizeReviewOrder(sanitized.layout?.sectionOrder);
     const withOrder = { ...sanitized, layout: { sectionOrder: nextOrder } };
@@ -523,7 +526,9 @@ export const usePortfolioStore = create((set, get) => ({
   },
   saveDraft: async () => {
     const { meta, data } = get();
+    console.log('[saveDraft] Attempting to save with meta:', meta);
     if (!meta.portfolioId) {
+      console.error('[saveDraft] No portfolio ID found!');
       return false;
     }
 
@@ -638,6 +643,7 @@ export const usePortfolioStore = create((set, get) => ({
   },
   openPreviewDraft: async () => {
     const { meta, data } = get();
+    console.log('[openPreviewDraft] Current meta:', meta);
     
     // Auto-generate slug from name if missing
     if (!meta.slug) {
