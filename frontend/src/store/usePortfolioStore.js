@@ -391,8 +391,9 @@ const extractMeta = (metaPayload, previousMeta = initialMeta) => {
   return {
     ...initialMeta,
     ...previousMeta,
-    resumeId: source.resume_id || source.resumeId || previousMeta.resumeId || null,
-    portfolioId: source.portfolio_id || source.portfolioId || previousMeta.portfolioId || null,
+    // ALWAYS use IDs from API response if present, don't fall back to previous values
+    resumeId: source.resume_id || source.resumeId || null,
+    portfolioId: source.portfolio_id || source.portfolioId || null,
     status: source.status || previousMeta.status || initialMeta.status,
     visibility: source.visibility || previousMeta.visibility || initialMeta.visibility,
     slug: source.slug ?? previousMeta.slug ?? initialMeta.slug,
