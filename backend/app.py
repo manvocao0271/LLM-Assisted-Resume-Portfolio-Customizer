@@ -1300,7 +1300,37 @@ async def root() -> Dict[str, Any]:
             "GET /api/portfolios/preview/{slug}",
             "POST /api/generative/preview",
             "GET /health",
+            "GET /debug/portfolios/{portfolio_id}",
         ],
+    }
+
+
+@app.get("/debug/portfolios/{portfolio_id}", tags=["meta"])
+async def debug_portfolio(
+    portfolio_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+) -> Dict[str, Any]:
+    """Debug endpoint to inspect portfolio data."""
+    portfolio = await session.get(PortfolioDraft, portfolio_id)
+    if portfolio is None:
+        return {"error": "Portfolio not found", "portfolio_id": str(portfolio_id)}
+    
+    content_keys = list(portfolio.content.keys()) if portfolio.content else []
+    content_size = len(str(portfolio.content)) if portfolio.content else 0
+    
+    return {
+        "id": str(portfolio.id),
+        "resume_id": str(portfolio.resume_id),
+        "slug": portfolio.slug,
+        "status": portfolio.status,
+        "visibility": portfolio.visibility,
+        "theme": portfolio.theme,
+        "has_content": portfolio.content is not None,
+        "content_is_dict": isinstance(portfolio.content, dict),
+        "content_keys": content_keys,
+        "content_size_bytes": content_size,
+        "created_at": portfolio.created_at.isoformat(),
+        "updated_at": portfolio.updated_at.isoformat(),
     }
 
 
