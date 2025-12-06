@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Dict
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1165,7 +1165,7 @@ async def read_portfolio_by_slug(
 @app.get("/api/portfolios/preview/{slug}")
 async def read_portfolio_draft_preview(
     slug: str,
-    portfolio_id: UUID,
+    portfolio_id: UUID = Query(..., description="Portfolio ID for authorization"),
     session: AsyncSession = Depends(get_session),
 ) -> Dict[str, Any]:
     """Draft preview by slug + id. Returns content regardless of publish/visibility.
