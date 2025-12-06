@@ -1249,6 +1249,7 @@ async def healthcheck() -> Dict[str, Any]:
         "model": DEFAULT_MODEL,
         "base_url": DEFAULT_BASE_URL or "OpenAI default",
         "dry_run": DEFAULT_DRY_RUN,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
 
