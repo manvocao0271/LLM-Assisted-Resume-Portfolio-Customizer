@@ -1173,6 +1173,7 @@ async def read_portfolio_draft_preview(
     This endpoint is intended for client-side previews before publishing. It requires both
     slug and portfolio_id to avoid leaking unrelated drafts.
     """
+    logger.info(f"Preview request: slug={slug}, portfolio_id={portfolio_id}")
     result = await session.execute(
         select(PortfolioDraft).where(
             PortfolioDraft.slug == slug,
@@ -1181,16 +1182,27 @@ async def read_portfolio_draft_preview(
     )
     portfolio = result.scalar_one_or_none()
     if portfolio is None:
+        logger.warning(f"Portfolio not found for slug={slug}, portfolio_id={portfolio_id}")
         raise HTTPException(status_code=404, detail="Portfolio not found.")
+    
+    logger.info(f"Portfolio found: id={portfolio.id}, has_content={portfolio.content is not None}")
     content = copy.deepcopy(portfolio.content)
+    
+    if not content:
+        logger.error(f"Portfolio {portfolio.id} has empty content!")
+        raise HTTPException(status_code=500, detail="Portfolio exists but has no content.")
+    
     # Refresh classifiers to ensure confidence reflects current normalization
     try:
         content["job_type"] = _infer_job_type(content)
         content["resume_job_type"] = _infer_job_type_from_resume(content)
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to refresh classifiers: {e}")
         pass
     resume = await session.get(ResumeDocument, portfolio.resume_id)
     await _apply_storage_metadata_from_resume(resume, content)
+    
+    logger.info(f"Returning content with {len(content)} keys")
     return {"data": content}
 
 

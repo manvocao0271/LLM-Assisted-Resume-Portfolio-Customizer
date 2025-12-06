@@ -27,15 +27,33 @@ export default function PreviewDraftPage() {
       try {
         const res = await fetch(fetchUrl);
         console.log('Preview response status:', res.status);
+        console.log('Preview response headers:', Object.fromEntries(res.headers.entries()));
+        
         if (!res.ok) {
           const errorText = await res.text();
           console.error('Preview fetch failed:', res.status, errorText);
           throw new Error(errorText || `HTTP ${res.status}: Failed to load preview`);
         }
-        const json = await res.json();
+        
+        const contentType = res.headers.get('content-type');
+        console.log('Content-Type:', contentType);
+        
+        const text = await res.text();
+        console.log('Raw response text:', text);
+        
+        if (!text) {
+          throw new Error('Server returned empty response. The portfolio may not exist or has no content.');
+        }
+        
+        const json = JSON.parse(text);
         console.log('Preview data received:', json);
         const data = json?.data || null;
         const spec = data?.generatedSpec || null;
+        
+        if (!data) {
+          throw new Error('No portfolio data in response. Check that the slug and portfolio_id are correct.');
+        }
+        
         if (!cancelled) {
           setState({ loading: false, error: '', data, spec });
         }
