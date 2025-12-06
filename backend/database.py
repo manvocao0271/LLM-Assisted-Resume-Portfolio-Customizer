@@ -29,16 +29,19 @@ class Base(DeclarativeBase):
 
 
 def _create_engine(url: str):
-    suppress_prepared_statements = {
-        "statement_cache_size": 0,
-        "prepared_statement_cache_size": 0,
-    }
+    # Statement cache suppression only for PostgreSQL (not supported by SQLite)
+    connect_args = {}
+    if "postgresql" in url:
+        connect_args = {
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        }
     return create_async_engine(
         url,
         future=True,
         echo=ECHO_SQL,
         pool_pre_ping=True,
-        connect_args=suppress_prepared_statements,
+        connect_args=connect_args,
     )
 
 
