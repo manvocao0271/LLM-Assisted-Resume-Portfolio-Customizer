@@ -1064,15 +1064,44 @@ async def update_portfolio(
     if payload.slug is not None:
         slug_value = payload.slug.strip()
         if slug_value:
-            slug_conflict = await session.execute(
-                select(PortfolioDraft.id).where(
-                    PortfolioDraft.slug == slug_value,
-                    PortfolioDraft.id != portfolio.id,
+            # Check for conflicts and auto-generate unique slug if needed
+            original_slug = slug_value
+            attempt = 0
+            max_attempts = 10
+            
+            while attempt < max_attempts:
+                slug_conflict = await session.execute(
+                    select(PortfolioDraft.id).where(
+                        PortfolioDraft.slug == slug_value,
+                        PortfolioDraft.id != portfolio.id,
+                    )
                 )
-            )
-            if slug_conflict.scalar_one_or_none():
-                raise HTTPException(status_code=409, detail="Slug already in use.")
+                if not slug_conflict.scalar_one_or_none():
+                    # No conflict, use this slug
+                    break
+                
+                # Generate unique suffix
+                attempt += 1
+                if attempt == 1:
+                    # First try: add timestamp
+                    timestamp = datetime.now(timezone.utc).strftime("%s")[-4:]
+                    slug_value = f"{original_slug}-{timestamp}"
+                else:
+                    # Subsequent tries: add random suffix
+                    import random
+                    suffix = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=4))
+                    slug_value = f"{original_slug}-{suffix}"
+                
+                logger.info(f"Slug conflict detected, trying: {slug_value}")
+            
+            if attempt >= max_attempts:
+                # Fallback: use UUID suffix
+                slug_value = f"{original_slug}-{uuid.uuid4().hex[:8]}"
+                logger.warning(f"Max slug attempts reached, using UUID suffix: {slug_value}")
+            
             portfolio.slug = slug_value
+            if slug_value != original_slug:
+                logger.info(f"Auto-generated unique slug: {original_slug} -> {slug_value}")
         else:
             portfolio.slug = None
 

@@ -541,44 +541,6 @@ export const usePortfolioStore = create((set, get) => ({
       if (!response.ok) {
         const message = await response.text();
         console.error('Save failed:', response.status, message);
-        
-        // If slug conflict (409), try adding timestamp
-        if (response.status === 409 && message.includes('Slug already in use')) {
-          console.log('Slug conflict detected, retrying with timestamp...');
-          const timestamp = Date.now().toString(36).slice(-4);
-          const newSlug = `${meta.slug}-${timestamp}`;
-          get().setMeta((prev) => ({ ...prev, slug: newSlug }));
-          
-          // Retry with new slug
-          const retryResponse = await fetch(withBaseUrl(`/api/portfolios/${meta.portfolioId}`), {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(buildPutBody(data, { ...meta, slug: newSlug }, get().generatedSpec)),
-          });
-          
-          if (!retryResponse.ok) {
-            throw new Error(await retryResponse.text() || 'Failed to save draft after retry.');
-          }
-          
-          const retryResult = await retryResponse.json();
-          const sanitized = sanitizeData(retryResult?.data);
-          const nextMeta = extractMeta(sanitized.meta, { ...meta, slug: newSlug });
-          const dataWithMeta = applyMetaToData(sanitized, nextMeta);
-
-          writeSession(nextMeta);
-          set({
-            data: dataWithMeta,
-            meta: nextMeta,
-            saveState: 'saved',
-            dirty: false,
-            lastSavedAt: new Date().toISOString(),
-          });
-
-          return true;
-        }
-        
         throw new Error(message || 'Failed to save draft.');
       }
 
