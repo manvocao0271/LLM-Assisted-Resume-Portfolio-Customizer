@@ -540,6 +540,45 @@ export const usePortfolioStore = create((set, get) => ({
 
       if (!response.ok) {
         const message = await response.text();
+        console.error('Save failed:', response.status, message);
+        
+        // If slug conflict (409), try adding timestamp
+        if (response.status === 409 && message.includes('Slug already in use')) {
+          console.log('Slug conflict detected, retrying with timestamp...');
+          const timestamp = Date.now().toString(36).slice(-4);
+          const newSlug = `${meta.slug}-${timestamp}`;
+          get().setMeta((prev) => ({ ...prev, slug: newSlug }));
+          
+          // Retry with new slug
+          const retryResponse = await fetch(withBaseUrl(`/api/portfolios/${meta.portfolioId}`), {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(buildPutBody(data, { ...meta, slug: newSlug }, get().generatedSpec)),
+          });
+          
+          if (!retryResponse.ok) {
+            throw new Error(await retryResponse.text() || 'Failed to save draft after retry.');
+          }
+          
+          const retryResult = await retryResponse.json();
+          const sanitized = sanitizeData(retryResult?.data);
+          const nextMeta = extractMeta(sanitized.meta, { ...meta, slug: newSlug });
+          const dataWithMeta = applyMetaToData(sanitized, nextMeta);
+
+          writeSession(nextMeta);
+          set({
+            data: dataWithMeta,
+            meta: nextMeta,
+            saveState: 'saved',
+            dirty: false,
+            lastSavedAt: new Date().toISOString(),
+          });
+
+          return true;
+        }
+        
         throw new Error(message || 'Failed to save draft.');
       }
 
@@ -641,15 +680,19 @@ export const usePortfolioStore = create((set, get) => ({
     // Auto-generate slug from name if missing
     if (!meta.slug) {
       const name = data?.name || 'portfolio';
+      const timestamp = Date.now().toString(36).slice(-4);
       const generatedSlug = name
         .toLowerCase()
         .replace(/[^a-z0-9-]/g, '-')
         .replace(/-{2,}/g, '-')
         .replace(/^-|-$/g, '')
-        .slice(0, 50) || 'my-portfolio';
+        .slice(0, 45) || 'my-portfolio';
+      
+      // Add timestamp to make it unique
+      const uniqueSlug = `${generatedSlug}-${timestamp}`;
       
       // Set the slug
-      get().setMeta((previous) => ({ ...previous, slug: generatedSlug }));
+      get().setMeta((previous) => ({ ...previous, slug: uniqueSlug }));
     }
     
     // Ensure we have a portfolioId
