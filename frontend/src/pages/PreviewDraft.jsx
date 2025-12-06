@@ -59,9 +59,31 @@ export default function PreviewDraftPage() {
   if (state.error) {
     return (
       <div className="mx-auto max-w-4xl p-6 text-slate-200">
-        <p className="text-rose-300">{state.error}</p>
-        <p className="text-sm text-slate-400 mt-2">If this is a draft, ensure the backend supports draft previews by slug.</p>
-        <Link to="/" className="text-brand-200 underline-offset-4 hover:underline">Back to editor</Link>
+        <p className="text-rose-300 text-lg font-semibold mb-4">Failed to Load Preview</p>
+        <p className="text-slate-300 mb-4">{state.error}</p>
+        <div className="rounded-xl bg-slate-900/80 border border-slate-700 p-4 mb-4">
+          <p className="text-sm text-slate-400 font-semibold mb-2">Troubleshooting:</p>
+          <ul className="text-sm text-slate-400 space-y-2 list-disc pl-5">
+            <li>Ensure you've saved your draft before previewing</li>
+            <li>Check that both slug and portfolio_id are present in the URL</li>
+            <li>Verify the backend is running and accessible</li>
+            <li>Check browser console (F12) for detailed error messages</li>
+          </ul>
+        </div>
+        <div className="flex gap-3">
+          <Link
+            to="/"
+            className="rounded-full border border-brand-500 bg-brand-500/10 px-4 py-2 text-sm text-brand-200 hover:bg-brand-500/20 hover:border-brand-400"
+          >
+            Back to editor
+          </Link>
+          <button
+            onClick={() => window.location.reload()}
+            className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-slate-600 hover:bg-slate-800"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
