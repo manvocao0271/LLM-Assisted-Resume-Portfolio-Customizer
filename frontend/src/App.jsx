@@ -4,7 +4,6 @@ import { StepIndicator } from './components/StepIndicator.jsx';
 import { UploadStep } from './components/UploadStep.jsx';
 import { ReviewStep } from './components/ReviewStep.jsx';
 import { CustomizeStep } from './components/CustomizeStep.jsx';
-import { StepNavigation } from './components/StepNavigation.jsx';
 import { usePortfolioStore } from './store/usePortfolioStore.js';
 
 const steps = [UploadStep, ReviewStep, CustomizeStep];
@@ -35,7 +34,6 @@ export default function App() {
           <div className="rounded-3xl border border-brand-500/30 bg-slate-900/70 p-6 shadow-card">
             <ActiveStepComponent />
           </div>
-          <StepNavigation />
         </div>
       </div>
     </main>

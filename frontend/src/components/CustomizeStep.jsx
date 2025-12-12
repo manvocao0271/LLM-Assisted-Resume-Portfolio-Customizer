@@ -29,11 +29,6 @@ export function CustomizeStep() {
     setMeta((previous) => ({ ...previous, slug: sanitized }));
   };
 
-  const handleStatusChange = (event) => {
-    const value = event.target.value;
-    setMeta((previous) => ({ ...previous, status: value }));
-  };
-
   const handleVisibilityChange = (event) => {
     const value = event.target.value;
     setMeta((previous) => ({ ...previous, visibility: value }));
@@ -48,7 +43,7 @@ export function CustomizeStep() {
           </span>
           <div>
             <h3 className="font-semibold text-white">Publishing settings</h3>
-            <p className="text-sm text-slate-400">Control the slug, draft status, and visibility of your public page.</p>
+            <p className="text-sm text-slate-400">Control the slug and visibility of your portfolio page.</p>
           </div>
         </header>
         <div className="mt-5 grid gap-5 md:grid-cols-2">
@@ -62,19 +57,6 @@ export function CustomizeStep() {
               className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
             />
             <span className="text-xs text-slate-500">Will appear after your domain: <code>/[slug]</code>.</span>
-          </label>
-
-          <label className="flex flex-col gap-2 text-sm text-slate-200">
-            <span className="text-xs uppercase tracking-[0.3em] text-slate-500">Status</span>
-            <select
-              value={meta.status}
-              onChange={handleStatusChange}
-              className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
-            >
-              <option value="draft">Draft (hidden)</option>
-              <option value="published">Published</option>
-            </select>
-            <span className="text-xs text-slate-500">Publishing will expose the portfolio to anyone with the link.</span>
           </label>
 
           <label className="flex flex-col gap-2 text-sm text-slate-200">
