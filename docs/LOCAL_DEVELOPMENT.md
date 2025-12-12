@@ -86,9 +86,6 @@ alembic upgrade head
 # Install Node dependencies
 cd frontend
 npm install
-
-# Or from root directory
-npm run setup
 ```
 
 #### Configure Frontend Environment (Optional)
@@ -117,25 +114,9 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
 **Terminal 2 - Frontend:**
 ```bash
-# From repository root
-npm run dev
-
-# Or from frontend directory
+# From frontend directory
 cd frontend
 npm run dev
-```
-
-### Option 2: Use Root Package Scripts
-
-```bash
-# Start frontend dev server (from root)
-npm run dev
-
-# Build frontend for production
-npm run build
-
-# Preview production build
-npm run preview
 ```
 
 ---
@@ -152,6 +133,7 @@ npm run preview
 
 2. **Start Frontend**
    ```bash
+   cd frontend
    npm run dev
    ```
 
