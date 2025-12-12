@@ -60,16 +60,14 @@ A small open-source project that turns a PDF résumé into a structured JSON pro
 ## Project Layout
 
 ```text
-backend/          FastAPI app, models, schemas, storage, job typing
+backend/          FastAPI app, models, schemas, storage, job typing, LLM parsing
 frontend/         React SPA (steps, previews, public portfolio views)
 alembic/          Database migrations (PostgreSQL/SQLite)
-scripts/          CLI tools (llm_label_resume.py for LLM parsing)
 tests/            Test suite (backend tests, fixtures)
 docs/             Documentation (LOCAL_DEVELOPMENT.md, DEPLOYMENT.md)
 app.py            Uvicorn entrypoint that exposes backend.app
 render.yaml       Render blueprint (backend + frontend services)
 requirements*.txt Python dependencies
-package.json      Root npm helpers that delegate to frontend/
 ```
 
 ---

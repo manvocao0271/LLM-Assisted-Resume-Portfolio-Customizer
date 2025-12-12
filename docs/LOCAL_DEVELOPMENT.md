@@ -151,19 +151,19 @@ Test the LLM parsing directly:
 
 ```bash
 # Basic usage (uses settings from .env)
-python scripts/llm_label_resume.py path/to/resume.pdf
+python -m backend.llm_label_resume path/to/resume.pdf
 
 # With custom model
-python scripts/llm_label_resume.py resume.pdf --model gpt-4o-mini
+python -m backend.llm_label_resume resume.pdf --model gpt-4o-mini
 
 # Dry run (no API call, uses mock data)
-python scripts/llm_label_resume.py resume.pdf --dry-run
+python -m backend.llm_label_resume resume.pdf --dry-run
 
 # With job description
-python scripts/llm_label_resume.py resume.pdf --job-description "Senior Python Developer role"
+python -m backend.llm_label_resume resume.pdf --job-description "Senior Python Developer role"
 
 # Get help
-python scripts/llm_label_resume.py --help
+python -m backend.llm_label_resume --help
 ```
 
 Output will be saved to `labeled_resume.json`.
