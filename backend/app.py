@@ -35,7 +35,7 @@ from backend.schemas import (
     SchemaSection,
 )
 from backend.job_types import JOB_TYPE_DEFINITIONS
-from llm_label_resume import label_with_llm, generate_tailored_summary, generate_tailored_highlights
+from scripts.llm_label_resume import label_with_llm, generate_tailored_summary, generate_tailored_highlights
 
 MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024  # 8 MB demo guard
 MAX_JOB_DESCRIPTION_LENGTH = 8 * 1024  # limit stored prompt context to 8 KB

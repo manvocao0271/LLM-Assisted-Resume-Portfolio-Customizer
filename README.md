@@ -73,10 +73,11 @@ preview).
 backend/          FastAPI app, models, schemas, storage, job typing
 frontend/         React SPA (steps, previews, public portfolio views)
 alembic/          Database migrations (PostgreSQL/SQLite)
+scripts/          CLI tools (llm_label_resume.py for LLM parsing)
+tests/            Test suite (backend tests, fixtures)
+docs/             Documentation (DEPLOYMENT.md, etc.)
 app.py            Uvicorn entrypoint that exposes backend.app
-llm_label_resume.py  CLI / library for LLM-driven resume labeling
 render.yaml       Render blueprint (backend + frontend services)
-DEPLOYMENT.md     Detailed Render deployment & env-var guide
 requirements*.txt Python dependencies
 package.json      Root npm helpers that delegate to frontend/
 ```
@@ -144,7 +145,7 @@ At minimum you will need to configure (in Render's dashboard or equivalent):
 - Optional Supabase settings for file storage buckets.
 
 For step-by-step deployment instructions and troubleshooting notes, see
-`DEPLOYMENT.md`.
+`docs/DEPLOYMENT.md`.
 
 ---
 
@@ -171,7 +172,7 @@ ResumeParser transforms traditional résumés into structured data and polished 
 Building public-facing portfolios from résumés usually requires manual reformatting. This project started as a CLI experiment to coerce LLMs into stable JSON output, then grew into a full-stack prototype that keeps human control at every step: section ordering, contact cleanup, draft previews, and publish-time slug management.
 
 ### Methods & Tools
-- **Parsing & Normalization:** Python 3.12, `llm_label_resume.py`, PyPDF2 link extraction, and environment-driven OpenAI-compatible providers.
+- **Parsing & Normalization:** Python 3.12, `scripts/llm_label_resume.py`, PyPDF2 link extraction, and environment-driven OpenAI-compatible providers.
 - **Backend Services:** FastAPI, async SQLAlchemy with Alembic migrations, Supabase Storage integration, and deterministic schema generation for prompts.
 - **Frontend Experience:** React 18 with Vite, Tailwind CSS, Zustand state store, and a SchemaRenderer that only renders vetted UI primitives.
 - **Dev Ergonomics:** Vite proxying, reusable npm scripts, and dry-run modes for both the parser and backend to support local testing.
@@ -189,7 +190,7 @@ Building public-facing portfolios from résumés usually requires manual reforma
 What’s already working and what’s left for a minimal publishable MVP.
 
 ### ✅ Done
-- CLI parser (`llm_label_resume.py`)
+- CLI parser (`scripts/llm_label_resume.py`)
   - Dry-run mode that returns a realistic sample or reuses `labeled_resume.json`
   - OpenAI-compatible provider support via `OPENAI_BASE_URL`, `MODEL_NAME`, `FORCE_JSON`
   - Link extraction from PDF annotations for traceability
@@ -261,7 +262,7 @@ python3 llm_label_resume.py "resume.pdf"
 
 OpenAI cloud (paid):
 ```zsh
-python3 llm_label_resume.py "resume.pdf" --model gpt-4o-mini
+python3 scripts/llm_label_resume.py "resume.pdf" --model gpt-4o-mini
 ```
 
 Any OpenAI-compatible server (LM Studio, Ollama, etc.):
@@ -269,19 +270,19 @@ Any OpenAI-compatible server (LM Studio, Ollama, etc.):
 
 Dry run (no API call):
 ```zsh
-python3 llm_label_resume.py "resume.pdf" --dry-run
+python3 scripts/llm_label_resume.py "resume.pdf" --dry-run
 ```
 
 Job description tailoring (optional):
 ```zsh
-python3 llm_label_resume.py "resume.pdf" --job-description "Senior machine learning engineer focused on embedded systems."
+python3 scripts/llm_label_resume.py "resume.pdf" --job-description "Senior machine learning engineer focused on embedded systems."
 ```
 
 You can also point `--job-description-file` at a text document when the posting is too long for the command line.
 
 ### CLI options
 ```zsh
-python3 llm_label_resume.py --help
+python3 scripts/llm_label_resume.py --help
 ```
 Key flags:
 - `--model` – override default model (otherwise falls back to `MODEL_NAME` or `gpt-4o-mini`)
@@ -303,7 +304,7 @@ Key flags:
 - `education`, `experience`, `projects`, `skills`
 - `embedded_links` from PDF annotations (for traceability)
 
-You can tailor the schema by editing the `SYSTEM_PROMPT` in `llm_label_resume.py`.
+You can tailor the schema by editing the `SYSTEM_PROMPT` in `scripts/llm_label_resume.py`.
 
 ## Tips
 # LLM-Assisted Resume Portfolio Builder
@@ -350,10 +351,11 @@ The goal is to give candidates a fast way to:
 backend/          FastAPI app, models, schemas, storage, job typing
 frontend/         React SPA (multi-step flow + portfolio views)
 alembic/          Database migrations
+scripts/          CLI tools (llm_label_resume.py for LLM parsing)
+tests/            Test suite (backend tests, fixtures)
+docs/             Documentation (DEPLOYMENT.md, etc.)
 app.py            Uvicorn entrypoint that re-exports backend.app
-llm_label_resume.py  CLI / library for LLM resume labeling
 render.yaml       Render blueprint (backend + frontend services)
-DEPLOYMENT.md     Longer step-by-step Render deployment guide
 requirements*.txt Python dependencies
 package.json      Root helpers to run frontend commands from repo root
 ```
@@ -414,7 +416,7 @@ The project is designed to deploy to Render with two services defined in `render
   - Builds with `npm install && npm run build` and serves the `dist/` bundle.
   - Needs `VITE_API_BASE_URL` pointing at the backend URL.
 
-For a full, step-by-step Render setup (including CORS and Supabase), see DEPLOYMENT.md.
+For a full, step-by-step Render setup (including CORS and Supabase), see `docs/DEPLOYMENT.md`.
 
 ---
 
