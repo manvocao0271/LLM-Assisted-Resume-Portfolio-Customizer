@@ -756,9 +756,20 @@ def _normalized_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
     def _digits_only(s: str) -> str:
         return "".join(ch for ch in s if ch.isdigit())
 
+    # For URLs, normalize by removing protocol and trailing slashes for comparison
+    def _normalize_url_key(url: str) -> str:
+        normalized = url.strip().lower()
+        # Remove protocol
+        for prefix in ["https://", "http://", "www."]:
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix):]
+        # Remove trailing slashes
+        normalized = normalized.rstrip("/")
+        return normalized
+
     emails = _dedupe(emails)
     phones = _dedupe(phones, key=lambda s: _digits_only(str(s)))
-    urls = _dedupe(urls)
+    urls = _dedupe(urls, key=_normalize_url_key)
 
     raw_payload: Dict[str, Any] = {}
     if isinstance(parsed, dict):
