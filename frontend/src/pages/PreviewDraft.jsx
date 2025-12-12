@@ -112,14 +112,8 @@ export default function PreviewDraftPage() {
     <div className="bg-black min-h-screen text-slate-100">
       <div className="mx-auto max-w-4xl p-6">
         <div className="rounded-3xl border border-brand-500/30 bg-slate-950/70 p-6 shadow-card">
-          <header className="mb-6 flex items-center justify-between">
+          <header className="mb-6">
             <h1 className="text-xl font-semibold">Unpublished Preview: {data?.meta?.slug || slug}</h1>
-            <Link
-              to="/"
-              className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-200 hover:border-brand-400 hover:text-brand-100"
-            >
-              Return to editor
-            </Link>
           </header>
           {/* For now, render generatedSpec via SchemaRenderer. If absent, fall back to theme preview. */}
           {spec ? (
