@@ -24,7 +24,7 @@
    SUPABASE_ARTIFACT_BUCKET=artifacts
    LLM_DRY_RUN=0
    
-   # LEAVE THIS EMPTY FOR NOW - we'll set it after frontend deploys
+   # LEAVE THIS EMPTY FOR NOW - set it after frontend deploys
    API_ALLOW_ORIGINS=
    ```
 
