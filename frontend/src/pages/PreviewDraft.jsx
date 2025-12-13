@@ -3,6 +3,7 @@ import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { resolveApiUrl, usePortfolioStore } from '../store/usePortfolioStore.js';
 import { SchemaRenderer } from '../components/SchemaRenderer.jsx';
 import { PortfolioPreview } from '../components/NeonPortfolioPreview.jsx';
+import { AnimatedWebBackground } from '../components/AnimatedWebBackground.jsx';
 
 export default function PreviewDraftPage() {
   const { slug } = useParams();
@@ -109,8 +110,9 @@ export default function PreviewDraftPage() {
   const { data, spec } = state;
 
   return (
-    <div className="bg-black min-h-screen text-slate-100">
-      <div className="mx-auto max-w-4xl p-6">
+    <div className="relative bg-black min-h-screen text-slate-100 overflow-hidden">
+      <AnimatedWebBackground opacity={0.2} />
+      <div className="relative z-10 mx-auto max-w-4xl p-6">
         <div className="rounded-3xl border border-brand-500/30 bg-slate-950/70 p-6 shadow-card">
           <header className="mb-6">
             <h1 className="text-xl font-semibold">Unpublished Preview: {data?.meta?.slug || slug}</h1>

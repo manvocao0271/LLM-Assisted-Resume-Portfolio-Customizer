@@ -41,7 +41,7 @@ MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024  # 8 MB demo guard
 MAX_JOB_DESCRIPTION_LENGTH = 8 * 1024  # limit stored prompt context to 8 KB
 DEFAULT_MODEL = os.getenv("MODEL_NAME", "gpt-4o-mini")
 DEFAULT_BASE_URL = os.getenv("OPENAI_BASE_URL") or None
-DEFAULT_DRY_RUN = os.getenv("LLM_DRY_RUN", "1").strip().lower() in {"1", "true", "yes"}
+DEFAULT_DRY_RUN = os.getenv("LLM_DRY_RUN", "0").strip().lower() in {"1", "true", "yes"}
 RAW_RESUME_FALLBACK_CONFIDENCE = 0.2  # below this, try structured fragments as a fallback
 
 THEME_OPTIONS = [
