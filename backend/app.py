@@ -41,7 +41,7 @@ MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024  # 8 MB demo guard
 MAX_JOB_DESCRIPTION_LENGTH = 8 * 1024  # limit stored prompt context to 8 KB
 DEFAULT_MODEL = os.getenv("MODEL_NAME", "gpt-4o-mini")
 DEFAULT_BASE_URL = os.getenv("OPENAI_BASE_URL") or None
-DEFAULT_DRY_RUN = os.getenv("LLM_DRY_RUN", "0").strip().lower() in {"1", "true", "yes"}
+DEFAULT_DRY_RUN = os.getenv("LLM_DRY_RUN", "1").strip().lower() in {"1", "true", "yes"}
 RAW_RESUME_FALLBACK_CONFIDENCE = 0.2  # below this, try structured fragments as a fallback
 
 THEME_OPTIONS = [
@@ -1244,6 +1244,109 @@ async def read_portfolio_draft_preview(
     
     logger.info(f"Returning content with {len(content)} keys")
     return {"data": content}
+
+
+@app.post("/api/resumes/{resume_id}/reanalyze")
+async def reanalyze_resume_with_job(
+    resume_id: UUID,
+    job_description: str | None = Form(None),
+    session: AsyncSession = Depends(get_session),
+) -> Dict[str, Any]:
+    """Re-run job classification and tailored content WITHOUT re-parsing the resume.
+    
+    This allows users to paste multiple job descriptions and see updated analytics
+    without making expensive LLM calls to re-parse the same resume.
+    """
+    resume = await session.get(ResumeDocument, resume_id)
+    if resume is None:
+        raise HTTPException(status_code=404, detail="Resume not found.")
+    
+    # Get the original parsed data (cached from first parse)
+    parsed = resume.parsed_payload or {}
+    if not parsed:
+        raise HTTPException(status_code=400, detail="Resume has no parsed data.")
+    
+    # Update job description
+    job_description_text = _normalize_job_description(job_description)
+    resume.job_description = job_description_text or None
+    
+    # Re-run classification and tailored content with new job description
+    parsed_with_job = parsed.copy()
+    if job_description_text:
+        parsed_with_job["job_description"] = job_description_text
+        
+        # Generate tailored summary (only if job description provided)
+        tailored_summary = generate_tailored_summary(
+            parsed,
+            job_description_text,
+            model=resume.llm_model or DEFAULT_MODEL,
+            base_url=DEFAULT_BASE_URL,
+            dry_run=resume.dry_run,
+        )
+    else:
+        tailored_summary = ""
+    
+    # Re-normalize with new job description (updates classifications)
+    normalized = _normalized_payload(parsed_with_job)
+    
+    if tailored_summary:
+        normalized["original_summary"] = normalized.get("summary", "")
+        normalized["summary"] = tailored_summary
+        normalized.setdefault("meta", {})["tailored_summary"] = True
+    
+    # Generate tailored highlights
+    highlights = generate_tailored_highlights(
+        normalized,
+        job_description_text,
+        model=resume.llm_model or DEFAULT_MODEL,
+        base_url=DEFAULT_BASE_URL,
+        dry_run=resume.dry_run,
+    )
+    
+    if highlights:
+        normalized.setdefault("experience", [])
+        normalized.setdefault("projects", [])
+        exp_updates = highlights.get("experience", [])
+        proj_updates = highlights.get("projects", [])
+        
+        experience_map = {item.get("id"): item for item in normalized["experience"] if item.get("id")}
+        for update in exp_updates:
+            if not update.get("id"):
+                continue
+            target = experience_map.get(update["id"])
+            if target and isinstance(update.get("bullets"), list):
+                target["bullets"] = update["bullets"]
+        
+        project_map = {item.get("id"): item for item in normalized["projects"] if item.get("id")}
+        for update in proj_updates:
+            if not update.get("id"):
+                continue
+            target = project_map.get(update["id"])
+            if target and isinstance(update.get("bullets"), list):
+                target["bullets"] = update["bullets"]
+    
+    # Update stored normalized payload
+    resume.normalized_payload = copy.deepcopy(normalized)
+    
+    # Update portfolio content as well
+    portfolio = await session.scalar(
+        select(PortfolioDraft).where(PortfolioDraft.resume_id == resume_id)
+    )
+    if portfolio:
+        # Preserve existing IDs and metadata
+        normalized_copy = _enrich_with_metadata(normalized, resume_id, portfolio.id)
+        _ensure_theme_structure(normalized_copy)
+        
+        # Apply storage metadata if available
+        await _apply_storage_metadata_from_resume(resume, normalized_copy)
+        
+        portfolio.content = copy.deepcopy(normalized_copy)
+    
+    await session.commit()
+    
+    # Return the enriched data with IDs
+    result = portfolio.content if portfolio else normalized
+    return {"data": result}
 
 
 @app.get("/api/resumes/{resume_id}/fit")
