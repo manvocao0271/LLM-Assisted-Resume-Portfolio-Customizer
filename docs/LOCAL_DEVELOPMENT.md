@@ -70,7 +70,7 @@ MODEL_NAME=llama-3.1-8b-instant
 # SUPABASE_ARTIFACT_BUCKET=artifacts
 
 # Development settings
-LLM_DRY_RUN=0  # Set to 1 to use mock data instead of real LLM calls
+LLM_DRY_RUN=1  # Set to 0 to use real LLM API calls (requires valid API key)
 ```
 
 #### Run Database Migrations
@@ -109,7 +109,12 @@ VITE_API_BASE_URL=http://localhost:8000
 ```bash
 # From repository root, with .venv activated
 source .venv/bin/activate
+
+# Run with mock data (default - no API key needed)
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
+
+# Or run with real LLM calls (requires OPENAI_API_KEY in .env)
+LLM_DRY_RUN=0 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 **Terminal 2 - Frontend:**
@@ -128,7 +133,7 @@ npm run dev
 1. **Start Backend**
    ```bash
    source .venv/bin/activate
-   uvicorn app:app --reload
+   uvicorn app:app --reload  # Runs in dry-run mode by default
    ```
 
 2. **Start Frontend**
@@ -304,7 +309,8 @@ npm install
 ### LLM/API Issues
 
 **Rate limiting:**
-- Use `LLM_DRY_RUN=1` in `.env` to skip API calls during testing
+- Default mode uses mock data (`LLM_DRY_RUN=1`) - no API calls needed
+- To use real API: set `LLM_DRY_RUN=0` in `.env` and provide `OPENAI_API_KEY`
 - Switch to Groq for higher free tier limits
 
 **JSON parsing errors:**
@@ -326,7 +332,7 @@ npm install
 | `SUPABASE_URL` | No | - | Supabase project URL |
 | `SUPABASE_SERVICE_ROLE_KEY` | No | - | Supabase service role key |
 | `SUPABASE_RESUME_BUCKET` | No | `resumes` | Bucket for PDF storage |
-| `LLM_DRY_RUN` | No | `0` | Set to `1` to use mock data |
+| `LLM_DRY_RUN` | No | `1` | Set to `0` to use real LLM API calls |
 | `FORCE_JSON` | No | - | Set to `0` if provider doesn't support JSON mode |
 | `DEBUG_JSON` | No | - | Set to `1` to log raw LLM responses |
 | `API_ALLOW_ORIGINS` | No | localhost | CORS allowed origins |
