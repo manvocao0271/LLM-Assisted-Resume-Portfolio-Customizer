@@ -1,6 +1,7 @@
 import clsx from 'classnames';
 import { useMemo } from 'react';
 import { THEME_OPTIONS } from '../store/usePortfolioStore.js';
+import { AnimatedWebBackground } from './AnimatedWebBackground.jsx';
 
 const ORDER_KEYS = ['name', 'summary', 'contact', 'experience', 'education', 'projects', 'skills'];
 
@@ -30,39 +31,36 @@ const withAlpha = (color, alpha, fallback) => {
 };
 
 function SectionHeading({ label, accentColor }) {
-  const borderColor = withAlpha(accentColor, 0.5, accentColor || '#ffffff44');
   const textColor = accentColor || '#ffffffaa';
+  const glowColor = withAlpha(accentColor, 0.5, 'rgba(255,255,255,0.3)');
   return (
-    <div className="border-l-4 pl-3" style={{ borderColor }}>
-      <h4 className="font-semibold uppercase tracking-[0.35em] text-xs" style={{ color: textColor }}>
-        {label}
-      </h4>
-    </div>
+    <h4 
+      className="font-semibold uppercase tracking-[0.35em] text-sm mb-1" 
+      style={{ 
+        color: textColor,
+        textShadow: `0 0 10px ${glowColor}, 0 0 20px ${glowColor}`
+      }}
+    >
+      {label}
+    </h4>
   );
 }
 
 export function PortfolioPreviewFrame({ children }) {
   return (
     <div
-      className={clsx('rounded-2xl border bg-black/40 p-8 shadow-card')}
+      className={clsx('relative rounded-2xl border bg-black/40 p-8 shadow-card overflow-hidden')}
       style={{ borderColor: 'rgba(255,255,255,0.08)' }}
     >
-      {children}
+      <AnimatedWebBackground opacity={0.12} />
+      <div className="relative z-10">
+        {children}
+      </div>
     </div>
   );
 }
 
-export function PortfolioPreview({ data }) {
-  // Add safety check
-  if (!data && typeof data !== 'object') {
-    return (
-      <div className="rounded-2xl border border-rose-500/30 bg-rose-950/20 p-8 text-rose-200">
-        <h3 className="text-lg font-semibold mb-2">No Data Available</h3>
-        <p className="text-sm">The portfolio data could not be loaded. Please try refreshing the page.</p>
-      </div>
-    );
-  }
-
+export function NeonPortfolioPreview({ data }) {
   const theme = useMemo(() => {
     const options = Array.isArray(data?.themes?.options) && data.themes.options.length > 0
       ? data.themes.options
@@ -127,12 +125,15 @@ export function PortfolioPreview({ data }) {
     return result;
   })();
 
+  const glowShadow = `0 0 20px ${withAlpha(accentColor, 0.4, 'rgba(255,255,255,0.2)')}, 0 0 40px ${withAlpha(accentColor, 0.2, 'rgba(255,255,255,0.1)')}, 0 30px 90px -30px rgba(15,23,42,0.9)`;
+  
   return (
     <div
-      className="rounded-2xl border bg-black/60 p-8 shadow-[0_30px_90px_-30px_rgba(15,23,42,0.9)] backdrop-blur"
+      className="rounded-2xl border bg-black/60 p-8 backdrop-blur"
       style={{
         backgroundImage: `linear-gradient(135deg, ${gradientPrimary}, ${gradientAccent})`,
         borderColor: containerBorder,
+        boxShadow: glowShadow,
       }}
     >
       {sectionOrder.map((key) => {
@@ -145,7 +146,12 @@ export function PortfolioPreview({ data }) {
               >
                 {theme?.name || 'Theme'}
               </p>
-              <h2 className="font-display text-3xl font-bold text-white">{data?.name || 'Your Name'}</h2>
+              <h2 
+                className="font-display text-3xl font-bold text-white" 
+                style={{ textShadow: `0 0 20px ${withAlpha(accentColor, 0.6, 'rgba(255,255,255,0.4)')}, 0 0 40px ${withAlpha(accentColor, 0.3, 'rgba(255,255,255,0.2)')}` }}
+              >
+                {data?.name || 'Your Name'}
+              </h2>
             </header>
           );
         }
@@ -153,7 +159,7 @@ export function PortfolioPreview({ data }) {
         if (key === 'summary') {
           return (
             <section key="summary" className="space-y-4 text-white">
-              <p className="text-sm leading-relaxed text-white/70">
+              <p className="text-base leading-relaxed text-white/70">
                 {data?.summary || 'Upload a résumé to generate a professional summary preview.'}
               </p>
             </section>
@@ -162,12 +168,14 @@ export function PortfolioPreview({ data }) {
 
         if (key === 'contact') {
           return contactChips.length > 0 ? (
-            <div key="contact" className="mt-4 flex flex-wrap gap-3 text-xs">
+            <div key="contact" className="mt-4 flex flex-wrap gap-3 text-sm">
               {contactChips.map((chip) => {
+                const chipGlow = `0 0 10px ${withAlpha(accentColor, 0.4, 'rgba(255,255,255,0.2)')}, inset 0 0 10px ${withAlpha(accentColor, 0.2, 'rgba(255,255,255,0.1)')}`;
                 const chipStyle = {
                   borderColor: chipBorderColor,
                   backgroundColor: chipBackground,
                   color: withAlpha(accentColor, 0.98, '#ffffff'),
+                  boxShadow: chipGlow,
                 };
                 if (chip.href) {
                   return (
@@ -203,7 +211,7 @@ export function PortfolioPreview({ data }) {
               <SectionHeading label="Experience" accentColor={accentColor} />
               {experience.length === 0 ? (
                 <p
-                  className="rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-white/70"
+                  className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70"
                   style={{ borderColor: experienceBorder, backgroundColor: experienceBackground }}
                 >
                   Experience entries will appear here after parsing.
@@ -213,15 +221,19 @@ export function PortfolioPreview({ data }) {
                   <article
                     key={item.id}
                     className="rounded-xl border border-white/10 bg-white/5 p-4"
-                    style={{ borderColor: experienceBorder, backgroundColor: experienceBackground }}
+                    style={{ 
+                      borderColor: experienceBorder, 
+                      backgroundColor: experienceBackground,
+                      boxShadow: `0 0 15px ${withAlpha(accentColor, 0.15, 'rgba(255,255,255,0.05)')}, inset 0 0 15px ${withAlpha(accentColor, 0.1, 'rgba(255,255,255,0.03)')}`
+                    }}
                   >
-                    <header className="flex flex-wrap items-center justify-between gap-2 text-sm text-white">
+                    <header className="flex flex-wrap items-center justify-between gap-2 text-base text-white">
                       <span className="font-semibold text-white">{item.role}</span>
                       <span className="text-white/60">{item.period}</span>
                     </header>
-                    <p className="text-white/70 text-sm">{item.company}</p>
+                    <p className="text-white/70 text-base">{item.company}</p>
                     {Array.isArray(item.bullets) && item.bullets.length > 0 && (
-                      <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-white/70">
+                      <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-white/70">
                         {item.bullets.map((bullet, index) => (
                           <li key={`${item.id}-${index}`}>{bullet}</li>
                         ))}
@@ -240,7 +252,7 @@ export function PortfolioPreview({ data }) {
               <SectionHeading label="Education" accentColor={accentColor} />
               {education.length === 0 ? (
                 <p
-                  className="rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-white/70"
+                  className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70"
                   style={{ borderColor: experienceBorder, backgroundColor: experienceBackground }}
                 >
                   Education items will display here once parsed.
@@ -249,10 +261,10 @@ export function PortfolioPreview({ data }) {
                 education.map((entry) => (
                   <article
                     key={entry.id}
-                    className="rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-white/80"
+                    className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/80"
                     style={{ borderColor: experienceBorder, backgroundColor: experienceBackground }}
                   >
-                    <p className="text-sm font-semibold text-white">{entry.school}</p>
+                    <p className="text-base font-semibold text-white">{entry.school}</p>
                     <p>{entry.degree}</p>
                     <p className="text-white/60">{entry.period}</p>
                   </article>
@@ -269,7 +281,7 @@ export function PortfolioPreview({ data }) {
               <div className="grid gap-3">
                 {projects.length === 0 ? (
                   <p
-                    className="rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-white/70"
+                    className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70"
                     style={{ borderColor: experienceBorder, backgroundColor: experienceBackground }}
                   >
                     Projects will showcase here with links and blurbs.
@@ -281,24 +293,24 @@ export function PortfolioPreview({ data }) {
                       className="rounded-xl border border-white/10 bg-white/5 p-4"
                       style={{ borderColor: experienceBorder, backgroundColor: experienceBackground }}
                     >
-                      <header className="flex items-center justify-between text-sm text-white">
+                      <header className="flex items-center justify-between text-base text-white">
                         <span className="font-semibold">{project.name}</span>
                         {project.link && (
                           <a
                             href={project.link}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-xs font-medium text-white/80 hover:text-white"
+                            className="text-sm font-medium text-white/80 hover:text-white"
                           >
                             View →
                           </a>
                         )}
                       </header>
                       {project.description && (
-                        <p className="mt-2 whitespace-pre-line text-xs text-white/70">{project.description}</p>
+                        <p className="mt-2 whitespace-pre-line text-sm text-white/70">{project.description}</p>
                       )}
                       {Array.isArray(project.bullets) && project.bullets.length > 0 && !project.description && (
-                        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-white/70">
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-white/70">
                           {project.bullets.map((bullet, index) => (
                             <li key={`${project.id}-${index}`}>{bullet}</li>
                           ))}
@@ -318,7 +330,7 @@ export function PortfolioPreview({ data }) {
               <SectionHeading label="Skills" accentColor={accentColor} />
               {skills.length === 0 ? (
                 <p
-                  className="rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-white/70"
+                  className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70"
                   style={{
                     borderColor: skillBorderColor,
                     backgroundColor: withAlpha(accentColor, 0.08, 'rgba(255,255,255,0.04)'),
@@ -331,8 +343,12 @@ export function PortfolioPreview({ data }) {
                   {skills.map((skill) => (
                     <span
                       key={skill.name || skill}
-                      className="rounded-full border px-3 py-1 text-xs uppercase tracking-[0.3em] text-white/80"
-                      style={{ borderColor: skillBorderColor, backgroundColor: chipBackground }}
+                      className="rounded-full border px-3 py-1 text-sm uppercase tracking-[0.3em] text-white/80"
+                      style={{ 
+                        borderColor: skillBorderColor, 
+                        backgroundColor: chipBackground,
+                        boxShadow: `0 0 10px ${withAlpha(accentColor, 0.3, 'rgba(255,255,255,0.15)')}, inset 0 0 10px ${withAlpha(accentColor, 0.15, 'rgba(255,255,255,0.08)')}`
+                      }}
                     >
                       {skill.name || skill}
                     </span>
@@ -349,4 +365,7 @@ export function PortfolioPreview({ data }) {
   );
 }
 
-export default PortfolioPreview;
+// Export alias for backward compatibility
+export { NeonPortfolioPreview as PortfolioPreview };
+
+export default NeonPortfolioPreview;
