@@ -29,11 +29,18 @@ except Exception:  # pragma: no cover
 
 SYSTEM_PROMPT = (
 	"You are a resume labeling assistant. Given the raw resume text, extract structured data.\n"
-	"Return well-formed JSON only, with these fields when available: name, email(s), phone(s), urls, "
-	"summary, education (list of entries with institution, degree, location, start_date, end_date, gpa, "
-	"coursework[]), experience (list of entries with title, organization, location, start_date, end_date, "
-	"achievements[]), projects (title, role, start_date, end_date, bullets[]), skills (list of strings), etc.\n"
+	"Return well-formed JSON only. Extract ALL sections that appear in the resume, using the actual section names from the document.\n"
+	"Common fields include: name, email(s), phone(s), urls, summary, contact (with emails, phones, urls).\n"
+	"For list-based sections (like experience, education, projects, skills, certifications, awards, publications, "
+	"volunteer_work, leadership, extracurricular_activities, languages, hobbies, etc.), use the EXACT section name "
+	"from the resume as the JSON key. Each section should be an array of entries.\n"
+	"For experience-like sections, include: title/role, organization/company, location, start_date, end_date, "
+	"achievements[]/bullets[]. For education: institution, degree, location, start_date, end_date, gpa, coursework[].\n"
+	"For projects: title, role, start_date, end_date, bullets[]. For simple list sections like skills or languages: "
+	"use an array of strings. For certifications/awards: name, issuer/organization, date, description.\n"
 	"Dates should be ISO-like 'YYYY-MM' when months are known; use null otherwise. Use empty arrays for missing lists.\n"
+	"Preserve the resume's section structure - do not rename sections. If a resume has 'Leadership Experience', "
+	"use 'leadership_experience' as the key (snake_case). If it has 'Volunteer Work', use 'volunteer_work'.\n"
 )
 
 # ---- Minimal PDF extraction (inlined) ----

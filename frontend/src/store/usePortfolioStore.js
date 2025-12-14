@@ -1,11 +1,19 @@
 import { create } from 'zustand';
 
-export const REVIEW_SECTION_KEYS = ['name', 'summary', 'contact', 'experience', 'projects', 'education', 'skills'];
+// Core section keys that are always available
+export const CORE_SECTION_KEYS = ['name', 'summary', 'contact'];
+// Common section keys (may or may not be present)
+export const COMMON_SECTION_KEYS = ['experience', 'projects', 'education', 'skills'];
+// Combined for backwards compatibility
+export const REVIEW_SECTION_KEYS = [...CORE_SECTION_KEYS, ...COMMON_SECTION_KEYS];
 
 export const THEME_OPTIONS = [
-  { id: 'aurora', name: 'Aurora Pulse', primary: '#ff5f6d', accent: '#ffc371' },
+  { id: 'aurora', name: 'Aurora Pulse', primary: '#9333ea', accent: '#ec4899' },
   { id: 'midnight', name: 'Neon Night', primary: '#7c3aed', accent: '#22d3ee' },
   { id: 'dawn', name: 'Electric Dawn', primary: '#10b981', accent: '#f472b6' },
+  { id: 'sunset', name: 'Sunset Glow', primary: '#f97316', accent: '#fbbf24' },
+  { id: 'ocean', name: 'Ocean Breeze', primary: '#0ea5e9', accent: '#06b6d4' },
+  { id: 'forest', name: 'Forest Mist', primary: '#059669', accent: '#84cc16' },
 ];
 
 const initialData = {
@@ -37,6 +45,13 @@ const initialData = {
   layout: {
     sectionOrder: [],
   },
+  sectionVisibility: {
+    summary: true,
+    experience: true,
+    projects: true,
+    education: true,
+    skills: true,
+  },
   themes: {
     selected: THEME_OPTIONS[0].id,
     options: THEME_OPTIONS,
@@ -59,17 +74,19 @@ const initialMeta = {
   publishedAt: null,
 };
 
-const normalizeReviewOrder = (order) => {
+const normalizeReviewOrder = (order, availableKeys = REVIEW_SECTION_KEYS) => {
   const nextOrder = Array.isArray(order) ? order.filter((key) => typeof key === 'string') : [];
   const unique = [];
 
+  // First, preserve existing order from the parameter
   for (const key of nextOrder) {
-    if (REVIEW_SECTION_KEYS.includes(key) && !unique.includes(key)) {
+    if (availableKeys.includes(key) && !unique.includes(key)) {
       unique.push(key);
     }
   }
 
-  for (const key of REVIEW_SECTION_KEYS) {
+  // Then add any missing keys from availableKeys
+  for (const key of availableKeys) {
     if (!unique.includes(key)) {
       unique.push(key);
     }
@@ -473,8 +490,25 @@ export const usePortfolioStore = create((set, get) => ({
     console.log('[setParsedData] Sanitized meta:', sanitized.meta);
     const nextMeta = extractMeta(sanitized.meta, get().meta);
     console.log('[setParsedData] Extracted meta:', nextMeta);
-    // derive review order from payload layout if present
-    const nextOrder = normalizeReviewOrder(sanitized.layout?.sectionOrder);
+    
+    // Dynamically detect available section keys from the payload
+    const detectedKeys = Object.keys(sanitized).filter(key => {
+      const value = sanitized[key];
+      const isExcluded = ['job_description', 'job_type', 'resume_job_type', 'embedded_links', 
+                          'themes', 'raw', 'meta', 'raw_resume_text', 'layout', 'urls', 'url', 
+                          'links', 'websites', 'profiles', 'emails', 'email', 'phones', 'phone', 
+                          'phone_number'].includes(key);
+      if (isExcluded) return false;
+      
+      // Include if it's an array (even empty for core sections) or truthy value
+      return Array.isArray(value) || (value && typeof value === 'object');
+    });
+    
+    // Combine core keys with detected keys
+    const allAvailableKeys = [...new Set([...CORE_SECTION_KEYS, ...detectedKeys])];
+    
+    // derive review order from payload layout if present, using detected keys
+    const nextOrder = normalizeReviewOrder(sanitized.layout?.sectionOrder, allAvailableKeys);
     const withOrder = { ...sanitized, layout: { sectionOrder: nextOrder } };
     const dataWithMeta = applyMetaToData(withOrder, nextMeta);
     writeSession(nextMeta);
@@ -492,8 +526,22 @@ export const usePortfolioStore = create((set, get) => ({
     const previous = get().data;
     const candidate = typeof updater === 'function' ? updater(previous) : updater;
     const sanitized = sanitizeData(candidate);
+    
+    // Dynamically detect available section keys
+    const detectedKeys = Object.keys(sanitized).filter(key => {
+      const value = sanitized[key];
+      const isExcluded = ['job_description', 'job_type', 'resume_job_type', 'embedded_links', 
+                          'themes', 'raw', 'meta', 'raw_resume_text', 'layout', 'urls', 'url', 
+                          'links', 'websites', 'profiles', 'emails', 'email', 'phones', 'phone', 
+                          'phone_number'].includes(key);
+      if (isExcluded) return false;
+      return Array.isArray(value) || (value && typeof value === 'object');
+    });
+    
+    const allAvailableKeys = [...new Set([...CORE_SECTION_KEYS, ...detectedKeys])];
+    
     // keep layout.sectionOrder in sync
-    const nextOrder = normalizeReviewOrder(sanitized.layout?.sectionOrder);
+    const nextOrder = normalizeReviewOrder(sanitized.layout?.sectionOrder, allAvailableKeys);
     sanitized.layout = { sectionOrder: nextOrder };
     const nextMeta = extractMeta(sanitized.meta, get().meta);
     const dataWithMeta = applyMetaToData(sanitized, nextMeta);
@@ -517,6 +565,17 @@ export const usePortfolioStore = create((set, get) => ({
       const next = normalizeReviewOrder(candidate);
       const nextData = { ...state.data, layout: { sectionOrder: next } };
       return { reviewOrder: next, data: nextData, dirty: true };
+    });
+  },
+  toggleSectionVisibility: (sectionKey) => {
+    set((state) => {
+      const currentVisibility = state.data.sectionVisibility || {};
+      const nextVisibility = {
+        ...currentVisibility,
+        [sectionKey]: !currentVisibility[sectionKey],
+      };
+      const nextData = { ...state.data, sectionVisibility: nextVisibility };
+      return { data: nextData, dirty: true };
     });
   },
   setMeta: (updater) => {

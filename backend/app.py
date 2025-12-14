@@ -45,9 +45,12 @@ DEFAULT_DRY_RUN = os.getenv("LLM_DRY_RUN", "0").strip().lower() in {"1", "true",
 RAW_RESUME_FALLBACK_CONFIDENCE = 0.2  # below this, try structured fragments as a fallback
 
 THEME_OPTIONS = [
-    {"id": "aurora", "name": "Aurora", "primary": "#42a5f5", "accent": "#f472b6"},
-    {"id": "midnight", "name": "Midnight", "primary": "#6366f1", "accent": "#22d3ee"},
-    {"id": "dawn", "name": "Dawn", "primary": "#f97316", "accent": "#facc15"},
+    {"id": "aurora", "name": "Aurora Pulse", "primary": "#9333ea", "accent": "#ec4899"},
+    {"id": "midnight", "name": "Neon Night", "primary": "#7c3aed", "accent": "#22d3ee"},
+    {"id": "dawn", "name": "Electric Dawn", "primary": "#10b981", "accent": "#f472b6"},
+    {"id": "sunset", "name": "Sunset Glow", "primary": "#f97316", "accent": "#fbbf24"},
+    {"id": "ocean", "name": "Ocean Breeze", "primary": "#0ea5e9", "accent": "#06b6d4"},
+    {"id": "forest", "name": "Forest Mist", "primary": "#059669", "accent": "#84cc16"},
 ]
 
 
@@ -217,6 +220,182 @@ FIT_STOP_WORDS = {
     "multiple",
     "drive",
     "support",
+    # Additional common words that don't indicate role fit
+    "you",
+    "our",
+    "we",
+    "us",
+    "they",
+    "them",
+    "it",
+    "its",
+    "be",
+    "are",
+    "is",
+    "was",
+    "were",
+    "been",
+    "being",
+    "has",
+    "had",
+    "do",
+    "does",
+    "did",
+    "can",
+    "could",
+    "would",
+    "should",
+    "may",
+    "might",
+    "must",
+    "shall",
+    "will",
+    "all",
+    "any",
+    "each",
+    "every",
+    "some",
+    "such",
+    "other",
+    "own",
+    "same",
+    "so",
+    "than",
+    "too",
+    "very",
+    "more",
+    "most",
+    "both",
+    "few",
+    "many",
+    "much",
+    "only",
+    "just",
+    "now",
+    "then",
+    "there",
+    "here",
+    "when",
+    "where",
+    "why",
+    "how",
+    "who",
+    "what",
+    "which",
+    "into",
+    "through",
+    "during",
+    "before",
+    "after",
+    "above",
+    "below",
+    "between",
+    "under",
+    "over",
+    "out",
+    "off",
+    "up",
+    "down",
+    "not",
+    "no",
+    "nor",
+    "but",
+    "yet",
+    "if",
+    "because",
+    "while",
+    "until",
+    "unless",
+    "since",
+    # Generic business/resume words
+    "including",
+    "related",
+    "working",
+    "include",
+    "includes",
+    "required",
+    "plus",
+    "using",
+    "understanding",
+    "knowledge",
+    "good",
+    "excellent",
+    "great",
+    "best",
+    "working",
+    "seeking",
+    "looking",
+    "ideal",
+    "successful",
+    "well",
+    "across",
+    "among",
+    "within",
+    "without",
+    "toward",
+    "towards",
+    "upon",
+    "via",
+    "per",
+    "new",
+    "current",
+    "previous",
+    "next",
+    "first",
+    "last",
+    "second",
+    "third",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "year",
+    "years",
+    "day",
+    "days",
+    "week",
+    "weeks",
+    "month",
+    "months",
+    "level",
+    "senior",
+    "junior",
+    "mid",
+    "entry",
+    "concept",
+    "concepts",
+    "thing",
+    "things",
+    "way",
+    "ways",
+    "make",
+    "making",
+    "made",
+    "help",
+    "helping",
+    "helped",
+    "provide",
+    "providing",
+    "provided",
+    "ensure",
+    "ensuring",
+    "ensured",
+    "develop",
+    "developing",
+    "developed",
+    "create",
+    "creating",
+    "created",
+    "build",
+    "building",
+    "built",
+    "improve",
+    "improving",
+    "improved",
+    "manage",
+    "managing",
+    "managed",
 }
 
 
@@ -244,7 +423,7 @@ def _tokenize_text(value: str) -> list[str]:
     candidates = re.findall(r"[a-z0-9]+", value.lower())
     normalized: list[str] = []
     for candidate in candidates:
-        # Drop common stop words and very short tokens (<=2 chars)
+        # Drop common stop words and very short tokens (<=2 chars to keep important 3-char terms like "api", "aws", "sql")
         if candidate in FIT_STOP_WORDS or len(candidate) <= 2:
             continue
         normalized.append(_normalize_token_word(candidate))
@@ -507,6 +686,10 @@ def _build_resume_text(normalized: Dict[str, Any]) -> str:
     summary = normalized.get("summary")
     if isinstance(summary, str) and summary.strip():
         parts.append(summary.strip())
+    elif isinstance(summary, list):
+        for line in summary:
+            if isinstance(line, str) and line.strip():
+                parts.append(line.strip())
 
     def _append_entry(entry: Any, keys: list[str]) -> None:
         if not isinstance(entry, dict):
@@ -528,6 +711,35 @@ def _build_resume_text(normalized: Dict[str, Any]) -> str:
         description = project.get("description") or project.get("summary")
         if isinstance(description, str) and description.strip():
             parts.append(description.strip())
+    
+    # Include education details
+    for edu in normalized.get("education") or []:
+        _append_entry(edu, ["institution", "degree", "field", "major"])
+        coursework = edu.get("coursework") if isinstance(edu, dict) else None
+        if isinstance(coursework, list):
+            for course in coursework:
+                if isinstance(course, str) and course.strip():
+                    parts.append(course.strip())
+    
+    # Include certifications
+    for cert in normalized.get("certifications") or []:
+        if isinstance(cert, dict):
+            _append_entry(cert, ["name", "issuer", "organization"])
+        elif isinstance(cert, str) and cert.strip():
+            parts.append(cert.strip())
+    
+    # Include any additional dynamic sections (leadership, volunteer, etc.)
+    for key, value in normalized.items():
+        if key in {"summary", "experience", "projects", "education", "certifications", "skills", "contact", "name", "email", "phone", "raw"}:
+            continue
+        if isinstance(value, list):
+            for item in value:
+                if isinstance(item, dict):
+                    _append_entry(item, ["title", "role", "organization", "name", "description"])
+                elif isinstance(item, str) and item.strip():
+                    parts.append(item.strip())
+    
+    # Include skills last
     for skill in normalized.get("skills") or []:
         if isinstance(skill, str) and skill.strip():
             parts.append(skill.strip())
@@ -778,14 +990,11 @@ def _normalized_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(raw_text, str) and len(raw_text) > MAX_JOB_DESCRIPTION_LENGTH:
             raw_payload["raw_resume_text"] = raw_text[:MAX_JOB_DESCRIPTION_LENGTH].rstrip()
 
+    # Base payload with required fields
     payload = {
         "name": parsed.get("name") or "",
         "summary": _collapse_summary(parsed.get("summary")),
         "job_description": _normalize_job_description(parsed.get("job_description")),
-        "experience": _experience_entries(parsed.get("experience")),
-        "education": _education_entries(parsed.get("education")),
-        "projects": _project_entries(parsed.get("projects")),
-        "skills": _safe_list(parsed.get("skills")),
         "contact": {
             "emails": emails,
             "phones": phones,
@@ -798,6 +1007,56 @@ def _normalized_payload(parsed: Dict[str, Any]) -> Dict[str, Any]:
         },
         "raw": raw_payload,
     }
+
+    # Dynamically add all array-based sections from the parsed resume
+    # Common section keys that might appear
+    KNOWN_EXPERIENCE_SECTIONS = {"experience", "work_experience", "employment", "professional_experience"}
+    KNOWN_EDUCATION_SECTIONS = {"education", "academic_background"}
+    KNOWN_PROJECT_SECTIONS = {"projects", "personal_projects", "side_projects"}
+    KNOWN_LIST_SECTIONS = {"skills", "technical_skills", "languages", "hobbies", "interests"}
+    
+    # Additional section types that might appear (certifications, awards, volunteer, etc.)
+    for key, value in parsed.items():
+        if key in {"name", "summary", "job_description", "contact", "embedded_links", "theme", "raw_resume_text", "emails", "email", "phones", "phone", "phone_number", "urls", "links", "profiles", "websites"}:
+            continue  # Skip already processed fields
+        
+        if not isinstance(value, (list, str)):
+            continue  # Only process lists and strings
+        
+        # Normalize the key to snake_case
+        normalized_key = key.lower().replace(" ", "_").replace("-", "_")
+        
+        # Handle experience-like sections
+        if normalized_key in KNOWN_EXPERIENCE_SECTIONS or any(term in normalized_key for term in ["experience", "employment", "work"]):
+            payload[normalized_key] = _experience_entries(value)
+        # Handle education sections
+        elif normalized_key in KNOWN_EDUCATION_SECTIONS or "education" in normalized_key:
+            payload[normalized_key] = _education_entries(value)
+        # Handle project sections
+        elif normalized_key in KNOWN_PROJECT_SECTIONS or "project" in normalized_key:
+            payload[normalized_key] = _project_entries(value)
+        # Handle simple list sections (skills, languages, etc.)
+        elif normalized_key in KNOWN_LIST_SECTIONS or isinstance(value, str):
+            payload[normalized_key] = _safe_list(value)
+        # Handle structured sections (certifications, awards, publications, volunteer, leadership, etc.)
+        elif isinstance(value, list) and value and isinstance(value[0], dict):
+            # Generic structured entries - preserve as-is with ID assignment
+            entries = []
+            for idx, item in enumerate(value):
+                if isinstance(item, dict):
+                    entry = dict(item)
+                    entry.setdefault("id", f"{normalized_key}_{idx}")
+                    entries.append(entry)
+            payload[normalized_key] = entries
+        else:
+            # Fallback: preserve the value as-is
+            payload[normalized_key] = value
+
+    # Ensure standard sections exist (even if empty) for backwards compatibility
+    payload.setdefault("experience", [])
+    payload.setdefault("education", [])
+    payload.setdefault("projects", [])
+    payload.setdefault("skills", [])
 
     payload["themes"]["options"] = copy.deepcopy(THEME_OPTIONS)
 
