@@ -109,11 +109,24 @@ export default function PreviewDraftPage() {
 
   const { data, spec } = state;
 
+  // Get theme accent color for outer border
+  const themeAccent = (() => {
+    const options = Array.isArray(data?.themes?.options) && data.themes.options.length > 0
+      ? data.themes.options
+      : [];
+    const selected = data?.themes?.selected;
+    const theme = options.find((option) => option.id === selected) ?? options[0];
+    return theme?.accent || '#ffc371';
+  })();
+
   return (
     <div className="relative bg-black min-h-screen text-slate-100 overflow-hidden">
       <AnimatedWebBackground opacity={0.2} />
       <div className="relative z-10 mx-auto max-w-4xl p-6">
-        <div className="rounded-3xl border border-brand-500/30 bg-slate-950/70 p-6 shadow-card">
+        <div 
+          className="rounded-3xl border bg-slate-950/70 p-6 shadow-card"
+          style={{ borderColor: `${themeAccent}30` }}
+        >
           <header className="mb-6">
             <h1 className="text-xl font-semibold">Unpublished Preview: {data?.meta?.slug || slug}</h1>
           </header>

@@ -25,7 +25,6 @@ const candidateEndpoints = normalizedBaseUrl
 export function UploadStep() {
   const inputRef = useRef(null);
   const [error, setError] = useState('');
-  const [jobDescription, setJobDescription] = useState('');
   const { rawFile, setRawFile, setUploadStatus, uploadStatus, setParsedData, nextStep, step, meta, data } = usePortfolioStore(
     (state) => ({
       rawFile: state.rawFile,
@@ -63,84 +62,6 @@ export function UploadStep() {
   );
 
   const parseResume = useCallback(async () => {
-    const existingResumeId = meta?.resumeId;
-    const hasExistingResume = Boolean(existingResumeId && !rawFile);
-
-    // If we have a resume ID but no new file, use the reanalyze endpoint
-    if (hasExistingResume) {
-      setError('');
-      setUploadStatus('uploading');
-      const trimmedJob = jobDescription.trim();
-
-      try {
-        const reanalyzeEndpoints = normalizedBaseUrl
-          ? [`${normalizedBaseUrl}/api/resumes/${existingResumeId}/reanalyze`]
-          : [
-              `/api/resumes/${existingResumeId}/reanalyze`,
-              `http://localhost:8000/api/resumes/${existingResumeId}/reanalyze`,
-              `http://127.0.0.1:8000/api/resumes/${existingResumeId}/reanalyze`,
-            ];
-
-        let lastNetworkError = null;
-
-        for (const endpoint of reanalyzeEndpoints) {
-          const formData = new FormData();
-          if (trimmedJob) {
-            formData.append('job_description', trimmedJob);
-          }
-
-          let response;
-          try {
-            response = await fetch(endpoint, {
-              method: 'POST',
-              body: formData,
-            });
-          } catch (networkError) {
-            lastNetworkError = networkError;
-            continue;
-          }
-
-          const contentType = response.headers.get('content-type') || '';
-          let payload = null;
-          if (contentType.includes('application/json')) {
-            try {
-              payload = await response.json();
-            } catch (parseError) {
-              console.warn('Unable to parse API JSON', parseError);
-            }
-          }
-
-          if (!response.ok) {
-            const detail = payload?.detail || payload?.message;
-            throw new Error(detail || 'Failed to re-analyze résumé.');
-          }
-
-          if (!payload?.data) {
-            throw new Error(`Unexpected API response. Status: ${response.status}.`);
-          }
-
-          setParsedData(payload.data);
-          setUploadStatus('parsed');
-          nextStep();
-          return;
-        }
-
-        const networkMessage =
-          lastNetworkError instanceof Error && lastNetworkError.message
-            ? lastNetworkError.message
-            : 'Could not reach the résumé service.';
-        throw new Error(
-          `${networkMessage} Ensure the backend is running on http://localhost:8000 or set VITE_API_BASE_URL.`,
-        );
-      } catch (apiError) {
-        console.error(apiError);
-        setUploadStatus('error');
-        setError(apiError.message || 'Something went wrong while re-analyzing the résumé.');
-      }
-      return;
-    }
-
-    // Original flow: parse new resume
     if (!rawFile) {
       setError('Please upload a PDF before parsing.');
       return;
@@ -149,7 +70,6 @@ export function UploadStep() {
     setError('');
     setUploadStatus('uploading');
     const fileToUpload = rawFile;
-    const trimmedJob = jobDescription.trim();
 
     try {
       let lastNetworkError = null;
@@ -157,9 +77,6 @@ export function UploadStep() {
       for (const endpoint of candidateEndpoints) {
         const formData = new FormData();
         formData.append('file', fileToUpload, fileToUpload.name);
-        if (trimmedJob) {
-          formData.append('job_description', trimmedJob);
-        }
 
         let response;
         try {
@@ -217,7 +134,7 @@ export function UploadStep() {
       setUploadStatus('error');
       setError(apiError.message || 'Something went wrong while parsing the résumé.');
     }
-  }, [jobDescription, nextStep, rawFile, setError, setParsedData, setUploadStatus, meta]);
+  }, [nextStep, rawFile, setError, setParsedData, setUploadStatus]);
 
   useEffect(() => {
     if (step !== 0) {
@@ -245,7 +162,7 @@ export function UploadStep() {
 
   const statusMessage = {
     idle: 'Drop your résumé PDF here or browse files',
-    ready: 'Résumé staged. Tap the button below when you’re ready to parse and evaluate role focus.',
+    ready: 'Résumé staged. Tap the button below to parse.',
     uploading: 'Uploading résumé…',
     parsed: 'Résumé parsed! Move to the next step to review data.',
     error: 'We hit a snag while parsing. Please try again.',
@@ -291,47 +208,22 @@ export function UploadStep() {
             </span>
           )}
         </div>
-        <div className="mt-4 w-full text-left">
-          <label htmlFor="job-description" className="text-sm font-semibold text-slate-200">
-            Job description (optional)
-          </label>
-          <p className="text-xs text-slate-400">
-            Paste the role description or bullet list from the job posting to tailor the portfolio output.
-          </p>
-          <textarea
-            id="job-description"
-            value={jobDescription}
-            onChange={(event) => setJobDescription(event.target.value)}
-            placeholder="E.g., Senior Product Design role at a fintech startup."
-            rows={3}
-            maxLength={8192}
-            className="mt-2 h-20 w-full rounded-2xl border border-slate-700/60 bg-slate-900/60 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:border-brand-400 focus:outline-none"
-          />
-        </div>
         <div className="mt-6 w-full space-y-2 text-center">
           <button
             type="button"
             onClick={parseResume}
-            disabled={(!rawFile && !meta?.resumeId) || uploadStatus === 'uploading'}
+            disabled={!rawFile || uploadStatus === 'uploading'}
             className={clsx(
               'w-full rounded-full px-5 py-2 text-sm font-semibold text-white shadow-lg transition duration-200',
-              (rawFile || meta?.resumeId) && uploadStatus !== 'uploading'
+              rawFile && uploadStatus !== 'uploading'
                 ? 'bg-brand-500/90 hover:bg-brand-500'
                 : 'bg-slate-600/80 cursor-not-allowed',
             )}
           >
-            {uploadStatus === 'uploading'
-              ? meta?.resumeId && !rawFile
-                ? 'Re-evaluating…'
-                : 'Parsing résumé…'
-              : meta?.resumeId && !rawFile
-              ? 'Re-evaluate role focus'
-              : 'Parse résumé and evaluate role focus'}
+            {uploadStatus === 'uploading' ? 'Parsing résumé…' : 'Parse résumé'}
           </button>
           <p className="text-xs text-slate-400">
-            {meta?.resumeId && !rawFile
-              ? 'Update the job description above and click to re-evaluate without re-uploading.'
-              : "Parsing only runs after you confirm. Once complete, we'll evaluate the fit and move you into the review step."}
+            Parsing only runs after you confirm. Once complete, you'll be able to review and edit your data.
           </p>
         </div>
         {error && <p className="text-sm text-rose-300">{error}</p>}

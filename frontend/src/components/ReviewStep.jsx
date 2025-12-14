@@ -1,6 +1,24 @@
-import { useMemo, useRef, useEffect, useState } from 'react';
+import { useMemo, useRef, useEffect, useState, useCallback } from 'react';
 
 import { usePortfolioStore, REVIEW_SECTION_KEYS, resolveApiUrl } from '../store/usePortfolioStore.js';
+
+// Eye icons for visibility toggle
+function EyeIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    </svg>
+  );
+}
+
+function EyeOffIcon({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+    </svg>
+  );
+}
 
 function SectionCard({ title, description, controls, children }) {
   return (
@@ -103,6 +121,124 @@ function JobTypeCard({ jobType, title = 'Job type classifier', description = 'We
   );
 }
 
+function ResumeClassifierCard() {
+  const data = usePortfolioStore((state) => state.data);
+  const meta = usePortfolioStore((state) => state.meta);
+  const setParsedData = usePortfolioStore((state) => state.setParsedData);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const resumeJobType = data?.resume_job_type || {};
+  const category = typeof resumeJobType?.category === 'string' && resumeJobType.category ? resumeJobType.category : '';
+  const confidenceValue =
+    typeof resumeJobType?.confidence === 'number' && Number.isFinite(resumeJobType.confidence)
+      ? Math.round(Math.max(0, Math.min(1, resumeJobType.confidence)) * 100)
+      : null;
+  const keywords = Array.isArray(resumeJobType?.matches) ? resumeJobType.matches.filter(Boolean) : [];
+
+  const analyzeResume = useCallback(async () => {
+    const resumeId = meta?.resumeId;
+    if (!resumeId) {
+      setError('No resume ID found. Please upload a resume first.');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+
+    try {
+      const url = resolveApiUrl(`/api/resumes/${resumeId}/reanalyze`);
+      
+      // Don't send any form data - the endpoint will use existing resume data
+      const response = await fetch(url, {
+        method: 'POST',
+      });
+
+      const contentType = response.headers.get('content-type') || '';
+      let payload = null;
+      if (contentType.includes('application/json')) {
+        try {
+          payload = await response.json();
+        } catch (parseError) {
+          console.warn('Unable to parse API JSON', parseError);
+        }
+      }
+
+      if (!response.ok) {
+        const detail = payload?.detail || payload?.message;
+        throw new Error(detail || 'Failed to analyze resume.');
+      }
+
+      if (!payload?.data) {
+        throw new Error(`Unexpected API response. Status: ${response.status}.`);
+      }
+
+      setParsedData(payload.data);
+    } catch (apiError) {
+      console.error(apiError);
+      setError(apiError.message || 'Something went wrong while analyzing the resume.');
+    } finally {
+      setLoading(false);
+    }
+  }, [meta, setParsedData]);
+
+  return (
+    <section className="rounded-2xl border border-slate-700 bg-slate-800/70 p-5 shadow-card">
+      <header className="flex items-center justify-between gap-3 border-b border-slate-700/80 pb-2">
+        <div>
+          <h3 className="text-base font-semibold text-white">Résumé classifier</h3>
+          <p className="text-xs text-slate-400">We infer a role focus directly from your résumé text so you can compare it with the job description signal.</p>
+        </div>
+        <span className="text-xs uppercase tracking-[0.3em] text-slate-500">ML</span>
+      </header>
+      
+      <div className="mt-4 space-y-4">
+        <button
+          type="button"
+          onClick={analyzeResume}
+          disabled={loading || !meta?.resumeId}
+          className={`w-full rounded-lg px-4 py-2 text-sm font-semibold text-white transition ${
+            loading || !meta?.resumeId
+              ? 'bg-slate-600/80 cursor-not-allowed'
+              : 'bg-brand-500/90 hover:bg-brand-500'
+          }`}
+        >
+          {loading ? 'Analyzing...' : 'Analyze labeled resume'}
+        </button>
+
+        {error && <p className="text-sm text-rose-300">{error}</p>}
+
+        {category && (
+          <div className="space-y-2 border-t border-slate-700/60 pt-4">
+            <p className="text-sm text-white">
+              Detected focus: <strong>{category}</strong>{' '}
+              {confidenceValue !== null ? <span className="text-xs text-slate-400">({confidenceValue}% confidence)</span> : null}
+            </p>
+            {keywords.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {keywords.slice(0, 6).map((keyword) => (
+                  <span
+                    key={keyword}
+                    className="rounded-full border border-slate-600 px-3 py-1 text-xs text-slate-200"
+                  >
+                    {keyword}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!category && !loading && (
+          <p className="text-xs text-slate-500">
+            Click the button above to analyze your resume and detect the role focus.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function FitScoreCard() {
   const data = usePortfolioStore((state) => state.data);
   const meta = usePortfolioStore((state) => state.meta);
@@ -171,7 +307,7 @@ function FitScoreCard() {
 
       <div className="mt-4 space-y-3 text-sm text-slate-200">
         {!canEvaluate && (
-          <p className="text-slate-400">Add a job description on upload to enable role-fit scoring.</p>
+          <p className="text-slate-400">Add a job description above to enable role-fit scoring.</p>
         )}
         {canEvaluate && error && (
           <p className="text-rose-300">{error}</p>
@@ -218,11 +354,156 @@ function FitScoreCard() {
   );
 }
 
+function JobDescriptionClassifier() {
+  const data = usePortfolioStore((state) => state.data);
+  const meta = usePortfolioStore((state) => state.meta);
+  const setParsedData = usePortfolioStore((state) => state.setParsedData);
+  const [jobDescription, setJobDescription] = useState(data?.job_description || '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    setJobDescription(data?.job_description || '');
+  }, [data?.job_description]);
+
+  const analyzeJobDescription = useCallback(async () => {
+    const trimmedJob = jobDescription.trim();
+    if (!trimmedJob) {
+      setError('Please enter a job description.');
+      return;
+    }
+
+    const resumeId = meta?.resumeId;
+    if (!resumeId) {
+      setError('No resume ID found. Please upload a resume first.');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+
+    try {
+      const url = resolveApiUrl(`/api/resumes/${resumeId}/reanalyze`);
+      const formData = new FormData();
+      formData.append('job_description', trimmedJob);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const contentType = response.headers.get('content-type') || '';
+      let payload = null;
+      if (contentType.includes('application/json')) {
+        try {
+          payload = await response.json();
+        } catch (parseError) {
+          console.warn('Unable to parse API JSON', parseError);
+        }
+      }
+
+      if (!response.ok) {
+        const detail = payload?.detail || payload?.message;
+        throw new Error(detail || 'Failed to analyze job description.');
+      }
+
+      if (!payload?.data) {
+        throw new Error(`Unexpected API response. Status: ${response.status}.`);
+      }
+
+      setParsedData(payload.data);
+    } catch (apiError) {
+      console.error(apiError);
+      setError(apiError.message || 'Something went wrong while analyzing the job description.');
+    } finally {
+      setLoading(false);
+    }
+  }, [jobDescription, meta, setParsedData]);
+
+  const jobType = data?.job_type || {};
+  const category = typeof jobType?.category === 'string' && jobType.category ? jobType.category : '';
+  const confidenceValue =
+    typeof jobType?.confidence === 'number' && Number.isFinite(jobType.confidence)
+      ? Math.round(Math.max(0, Math.min(1, jobType.confidence)) * 100)
+      : null;
+  const keywords = Array.isArray(jobType?.matches) ? jobType.matches.filter(Boolean) : [];
+
+  return (
+    <section className="rounded-2xl border border-slate-700 bg-slate-800/70 p-5 shadow-card">
+      <header className="border-b border-slate-700/80 pb-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-white">Job description classifier</h3>
+            <p className="text-xs text-slate-400">Paste the job description to match your portfolio focus with the target opportunity.</p>
+          </div>
+          <span className="text-xs uppercase tracking-[0.3em] text-slate-500">ML</span>
+        </div>
+      </header>
+      
+      <div className="mt-4 space-y-4">
+        <div>
+          <label htmlFor="review-job-description" className="sr-only">
+            Job description
+          </label>
+          <textarea
+            id="review-job-description"
+            value={jobDescription}
+            onChange={(event) => setJobDescription(event.target.value)}
+            placeholder="Paste the role description or bullet list from the job posting..."
+            rows={4}
+            maxLength={8192}
+            className="w-full rounded-xl border border-slate-700/60 bg-slate-900/60 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-600 focus:border-brand-400 focus:outline-none"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={analyzeJobDescription}
+          disabled={loading || !jobDescription.trim()}
+          className={`w-full rounded-lg px-4 py-2 text-sm font-semibold text-white transition ${
+            loading || !jobDescription.trim()
+              ? 'bg-slate-600/80 cursor-not-allowed'
+              : 'bg-brand-500/90 hover:bg-brand-500'
+          }`}
+        >
+          {loading ? 'Analyzing...' : 'Analyze job description'}
+        </button>
+
+        {error && <p className="text-sm text-rose-300">{error}</p>}
+
+        {category && (
+          <div className="mt-4 space-y-2 border-t border-slate-700/60 pt-4">
+            <p className="text-sm text-white">
+              Detected focus: <strong>{category}</strong>{' '}
+              {confidenceValue !== null ? <span className="text-xs text-slate-400">({confidenceValue}% confidence)</span> : null}
+            </p>
+            {keywords.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {keywords.slice(0, 6).map((keyword) => (
+                  <span
+                    key={keyword}
+                    className="rounded-full border border-slate-600 px-3 py-1 text-xs text-slate-200"
+                  >
+                    {keyword}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function ReviewStep() {
   const data = usePortfolioStore((state) => state.data);
   const updateData = usePortfolioStore((state) => state.updateData);
   const reviewOrder = usePortfolioStore((state) => state.reviewOrder);
   const setReviewOrder = usePortfolioStore((state) => state.setReviewOrder);
+  const toggleSectionVisibility = usePortfolioStore((state) => state.toggleSectionVisibility);
+
+  const sectionVisibility = data.sectionVisibility || {};
 
   const experience = Array.isArray(data.experience) ? data.experience : [];
   const projects = Array.isArray(data.projects) ? data.projects : [];
@@ -238,8 +519,6 @@ export function ReviewStep() {
   const hasProjects = projects.length > 0;
   const hasEducation = education.length > 0;
   const hasSkills = skills.length > 0;
-  const jobType = data.job_type || {};
-  const resumeJobType = data.resume_job_type || {};
 
   // Summary local buffer
   const [summaryValue, setSummaryValue] = useState(data.summary || '');
@@ -647,6 +926,112 @@ export function ReviewStep() {
     </>
   );
 
+  // Helper to render generic list sections (like languages, certifications as simple lists)
+  const renderGenericListSection = (sectionKey) => {
+    const items = Array.isArray(data[sectionKey]) ? data[sectionKey] : [];
+    const [localValue, setLocalValue] = useState(items.join(', '));
+    
+    useEffect(() => {
+      setLocalValue(items.join(', '));
+    }, [items.join('|')]);
+
+    return (
+      <>
+        <AutoResizeTextarea
+          value={localValue}
+          onChange={(e) => setLocalValue(e.target.value)}
+          onBlur={() => {
+            const nextItems = localValue
+              .split(/[\n,]/)
+              .map((item) => item.trim())
+              .filter(Boolean);
+            updateData((previous) => ({ ...previous, [sectionKey]: nextItems }));
+          }}
+          className="w-full rounded-xl border border-slate-700 bg-slate-900/60 p-3 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
+        />
+        <p className="text-xs text-slate-500">Separate items with commas or new lines.</p>
+      </>
+    );
+  };
+
+  // Helper to render generic structured sections (awards, certifications, volunteer work, etc.)
+  const renderGenericStructuredSection = (sectionKey) => {
+    const entries = Array.isArray(data[sectionKey]) ? data[sectionKey] : [];
+    
+    return (
+      <>
+        {entries.map((entry, idx) => (
+          <article key={entry.id || idx} className="space-y-2 rounded-xl border border-slate-700/60 bg-slate-900/40 p-4">
+            {Object.entries(entry).map(([fieldKey, fieldValue]) => {
+              if (fieldKey === 'id') return null;
+              
+              const isArray = Array.isArray(fieldValue);
+              const isLongText = typeof fieldValue === 'string' && fieldValue.length > 100;
+              
+              return (
+                <div key={fieldKey}>
+                  <label className="text-xs uppercase tracking-widest text-slate-400">
+                    {fieldKey.replace(/_/g, ' ')}
+                  </label>
+                  {isArray ? (
+                    <AutoResizeTextarea
+                      value={Array.isArray(fieldValue) ? fieldValue.join('\n') : String(fieldValue)}
+                      onChange={(e) => {
+                        const lines = e.target.value.split('\n').map(l => l.trim()).filter(Boolean);
+                        updateData((previous) => {
+                          const sectionData = Array.isArray(previous[sectionKey]) ? previous[sectionKey] : [];
+                          return {
+                            ...previous,
+                            [sectionKey]: sectionData.map((item, i) =>
+                              i === idx ? { ...item, [fieldKey]: lines } : item
+                            ),
+                          };
+                        });
+                      }}
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
+                    />
+                  ) : isLongText ? (
+                    <AutoResizeTextarea
+                      value={String(fieldValue || '')}
+                      onChange={(e) => {
+                        updateData((previous) => {
+                          const sectionData = Array.isArray(previous[sectionKey]) ? previous[sectionKey] : [];
+                          return {
+                            ...previous,
+                            [sectionKey]: sectionData.map((item, i) =>
+                              i === idx ? { ...item, [fieldKey]: e.target.value } : item
+                            ),
+                          };
+                        });
+                      }}
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
+                    />
+                  ) : (
+                    <input
+                      value={String(fieldValue || '')}
+                      onChange={(e) => {
+                        updateData((previous) => {
+                          const sectionData = Array.isArray(previous[sectionKey]) ? previous[sectionKey] : [];
+                          return {
+                            ...previous,
+                            [sectionKey]: sectionData.map((item, i) =>
+                              i === idx ? { ...item, [fieldKey]: e.target.value } : item
+                            ),
+                          };
+                        });
+                      }}
+                      className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-500/40"
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </article>
+        ))}
+      </>
+    );
+  };
+
   const baseSectionEntries = [
     {
       key: 'name',
@@ -716,7 +1101,55 @@ export function ReviewStep() {
     },
   ];
 
-  const activeSectionEntries = useMemo(() => baseSectionEntries.filter((entry) => entry.shouldRender), [baseSectionEntries]);
+  // Dynamically detect and add additional sections from the data
+  const dynamicSectionEntries = useMemo(() => {
+    const knownKeys = new Set(['name', 'summary', 'contact', 'experience', 'projects', 'education', 'skills', 
+                               'job_description', 'job_type', 'resume_job_type', 'embedded_links', 'themes', 
+                               'raw', 'meta', 'raw_resume_text', 'urls', 'url', 'links', 'websites', 'profiles',
+                               'emails', 'email', 'phones', 'phone', 'phone_number']);
+    const dynamic = [];
+    
+    for (const [key, value] of Object.entries(data)) {
+      if (knownKeys.has(key)) continue;
+      if (!value || (Array.isArray(value) && value.length === 0)) continue;
+      
+      const isArray = Array.isArray(value);
+      const isSimpleList = isArray && value.every(item => typeof item === 'string');
+      const isStructuredList = isArray && value.some(item => typeof item === 'object' && item !== null);
+      
+      if (isSimpleList || isStructuredList) {
+        // Format the title nicely
+        const title = key
+          .split('_')
+          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+        
+        const description = isStructuredList 
+          ? `Details and highlights for ${title.toLowerCase()}.`
+          : `List of ${title.toLowerCase()}.`;
+        
+        dynamic.push({
+          key,
+          title,
+          description,
+          shouldRender: true,
+          render: isSimpleList 
+            ? () => renderGenericListSection(key)
+            : () => renderGenericStructuredSection(key),
+        });
+      }
+    }
+    
+    return dynamic;
+  }, [data]);
+
+  // Combine base sections with dynamic sections
+  const allSectionEntries = useMemo(() => 
+    [...baseSectionEntries, ...dynamicSectionEntries],
+    [baseSectionEntries, dynamicSectionEntries]
+  );
+
+  const activeSectionEntries = useMemo(() => allSectionEntries.filter((entry) => entry.shouldRender), [allSectionEntries]);
   const sectionEntries = useMemo(() => {
     const orderIndex = (key) => {
       const order = reviewOrder.indexOf(key);
@@ -747,62 +1180,73 @@ export function ReviewStep() {
   };
 
   return (
-    <div className="space-y-8">
-      {/* Classifiers section separated from edit cards */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <JobTypeCard
-          jobType={jobType}
-          title="Job description classifier"
-          description="We scan the job description you provided to match your portfolio focus with the target opportunity."
-        />
-        <JobTypeCard
-          jobType={resumeJobType}
-          title="Résumé classifier"
-          description="We infer a role focus directly from your résumé text so you can compare it with the job description signal."
-        />
-        <FitScoreCard />
+    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_400px]">
+      {/* Main content - Editable sections */}
+      <div className="space-y-6">
+        {sectionEntries.map((section, idx) => {
+          const isFirst = idx === 0;
+          const isLast = idx === sectionEntries.length - 1;
+          const isVisible = sectionVisibility[section.key] !== false;
+          const controls = (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => toggleSectionVisibility(section.key)}
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-md border transition ${
+                  isVisible
+                    ? 'border-slate-600 bg-slate-900/60 text-slate-300 hover:border-brand-400 hover:text-brand-300'
+                    : 'border-slate-700 bg-slate-900/30 text-slate-500 opacity-60 hover:opacity-100'
+                }`}
+                aria-label={`Toggle ${section.title} visibility`}
+                title={isVisible ? 'Hide section' : 'Show section'}
+              >
+                {isVisible ? <EyeIcon className="h-5 w-5" /> : <EyeOffIcon className="h-5 w-5" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => swapWithIndex(idx, 'up')}
+                disabled={isFirst}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-600 bg-slate-900/60 px-3 text-xs font-medium text-slate-300 transition hover:border-brand-400 hover:text-brand-300 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={`Move ${section.title} up`}
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={() => swapWithIndex(idx, 'down')}
+                disabled={isLast}
+                className="inline-flex h-9 items-center justify-center rounded-md border border-slate-600 bg-slate-900/60 px-3 text-xs font-medium text-slate-300 transition hover:border-brand-400 hover:text-brand-300 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={`Move ${section.title} down`}
+              >
+                ↓
+              </button>
+            </div>
+          );
+
+          return (
+            <div key={section.key} className="transition-all">
+              <SectionCard title={section.title} description={section.description} controls={controls}>
+                {section.render()}
+              </SectionCard>
+            </div>
+          );
+        })}
+
+        {sectionEntries.length === 1 && (
+          <p className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4 text-sm text-slate-400">
+            We generated a starter summary. Upload a richer résumé to unlock more sections to edit.
+          </p>
+        )}
       </div>
-      {/* Editable content cards below in distinct section */}
-      {sectionEntries.map((section, idx) => {
-        const isFirst = idx === 0;
-        const isLast = idx === sectionEntries.length - 1;
-        const controls = (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => swapWithIndex(idx, 'up')}
-              disabled={isFirst}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-600 bg-slate-900/60 px-3 text-xs font-medium text-slate-300 transition hover:border-brand-400 hover:text-brand-300 disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label={`Move ${section.title} up`}
-            >
-              ↑
-            </button>
-            <button
-              type="button"
-              onClick={() => swapWithIndex(idx, 'down')}
-              disabled={isLast}
-              className="inline-flex h-9 items-center justify-center rounded-md border border-slate-600 bg-slate-900/60 px-3 text-xs font-medium text-slate-300 transition hover:border-brand-400 hover:text-brand-300 disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label={`Move ${section.title} down`}
-            >
-              ↓
-            </button>
-          </div>
-        );
 
-        return (
-          <div key={section.key} className="transition-all">
-            <SectionCard title={section.title} description={section.description} controls={controls}>
-              {section.render()}
-            </SectionCard>
-          </div>
-        );
-      })}
-
-      {sectionEntries.length === 1 && (
-        <p className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4 text-sm text-slate-400">
-          We generated a starter summary. Upload a richer résumé to unlock more sections to edit.
-        </p>
-      )}
+      {/* Sticky sidebar - Classifiers */}
+      <div className="space-y-6">
+        <div className="sticky top-6 space-y-6">
+          <JobDescriptionClassifier />
+          <ResumeClassifierCard />
+          <FitScoreCard />
+        </div>
+      </div>
     </div>
   );
 }

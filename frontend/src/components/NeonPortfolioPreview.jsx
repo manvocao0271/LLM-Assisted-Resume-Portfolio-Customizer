@@ -85,6 +85,7 @@ export function NeonPortfolioPreview({ data }) {
   const skills = Array.isArray(data?.skills) ? data.skills : [];
   const education = Array.isArray(data?.education) ? data.education : [];
   const contact = data?.contact || {};
+  const sectionVisibility = data?.sectionVisibility || {};
   const sectionOrder = Array.isArray(data?.layout?.sectionOrder) && data.layout.sectionOrder.length
     ? data.layout.sectionOrder
     : ORDER_KEYS;
@@ -137,6 +138,11 @@ export function NeonPortfolioPreview({ data }) {
       }}
     >
       {sectionOrder.map((key) => {
+        // Check if section is hidden
+        if (sectionVisibility[key] === false) {
+          return null;
+        }
+
         if (key === 'name') {
           return (
             <header key="name" className="space-y-2 text-white">
@@ -302,7 +308,7 @@ export function NeonPortfolioPreview({ data }) {
                             rel="noreferrer"
                             className="text-sm font-medium text-white/80 hover:text-white"
                           >
-                            View →
+                            Link to project →
                           </a>
                         )}
                       </header>
@@ -357,6 +363,74 @@ export function NeonPortfolioPreview({ data }) {
               )}
             </section>
           );
+        }
+
+        // Handle dynamic sections (e.g., certifications, languages, awards, etc.)
+        // Check if section exists in data and is not a core section
+        if (data?.[key]) {
+          const sectionData = data[key];
+          
+          // Simple list sections (array of strings)
+          if (Array.isArray(sectionData) && sectionData.length > 0 && typeof sectionData[0] === 'string') {
+            return (
+              <section key={key} className="mt-8 space-y-3">
+                <SectionHeading label={key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} accentColor={accentColor} />
+                <div className="flex flex-wrap gap-3">
+                  {sectionData.map((item, idx) => (
+                    <span
+                      key={`${key}-${idx}`}
+                      className="rounded-full border px-3 py-1 text-sm text-white/80"
+                      style={{ 
+                        borderColor: chipBorderColor, 
+                        backgroundColor: chipBackground,
+                        boxShadow: `0 0 10px ${withAlpha(accentColor, 0.3, 'rgba(255,255,255,0.15)')}, inset 0 0 10px ${withAlpha(accentColor, 0.15, 'rgba(255,255,255,0.08)')}`
+                      }}
+                    >
+                      {item}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            );
+          }
+          
+          // Structured sections (array of objects)
+          if (Array.isArray(sectionData) && sectionData.length > 0 && typeof sectionData[0] === 'object') {
+            return (
+              <section key={key} className="mt-8 space-y-3">
+                <SectionHeading label={key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} accentColor={accentColor} />
+                {sectionData.map((entry, idx) => (
+                  <article
+                    key={entry.id || idx}
+                    className="rounded-xl border border-white/10 bg-white/5 p-4 space-y-2"
+                    style={{ borderColor: experienceBorder, backgroundColor: experienceBackground }}
+                  >
+                    {Object.entries(entry).map(([fieldKey, fieldValue]) => {
+                      if (fieldKey === 'id') return null;
+                      
+                      const isArray = Array.isArray(fieldValue);
+                      const label = fieldKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                      
+                      return (
+                        <div key={fieldKey}>
+                          <p className="text-xs uppercase tracking-widest text-white/60 mb-1">{label}</p>
+                          {isArray ? (
+                            <ul className="list-disc space-y-1 pl-5 text-sm text-white/70">
+                              {fieldValue.map((item, i) => (
+                                <li key={i}>{item}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-white/80">{String(fieldValue)}</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </article>
+                ))}
+              </section>
+            );
+          }
         }
 
         return null;

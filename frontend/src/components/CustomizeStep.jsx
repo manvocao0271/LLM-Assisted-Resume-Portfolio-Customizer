@@ -2,14 +2,6 @@ import clsx from 'classnames';
 import { usePortfolioStore } from '../store/usePortfolioStore.js';
 import { PencilIcon, GlobeIcon } from './icons.jsx';
 
-const sections = [
-  { id: 'summary', label: 'Summary', description: 'Intro blurb shown at the top of the portfolio.' },
-  { id: 'experience', label: 'Experience', description: 'Timeline of roles, companies, and achievements.' },
-  { id: 'projects', label: 'Projects', description: 'Showcase personal or professional work highlight cards.' },
-  { id: 'education', label: 'Education', description: 'Academic background and certifications.' },
-  { id: 'skills', label: 'Skills', description: 'Tag cloud generated from your key skills.' },
-];
-
 export function CustomizeStep() {
   const { data, meta, updateTheme, setMeta, saveState, openPreviewDraft } = usePortfolioStore((state) => ({
     data: state.data,
@@ -132,32 +124,6 @@ export function CustomizeStep() {
               </button>
             );
           })}
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-700 bg-slate-800/70 p-6 shadow-card">
-        <header className="flex items-center gap-3 border-b border-slate-700 pb-4">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-500/20 text-brand-300">
-            <GlobeIcon className="h-5 w-5" />
-          </span>
-          <div>
-            <h3 className="font-semibold text-white">Section visibility</h3>
-            <p className="text-sm text-slate-400">Toggle sections you want to keep or hide before publishing.</p>
-          </div>
-        </header>
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          {sections.map((section) => (
-            <label
-              key={section.id}
-              className="flex cursor-pointer flex-col gap-2 rounded-xl border border-slate-700/80 bg-slate-900/50 p-4 transition hover:border-brand-400/60"
-            >
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-white">{section.label}</span>
-                <input type="checkbox" defaultChecked className="h-5 w-5 rounded border-slate-600 text-brand-500 focus:ring-brand-500" />
-              </div>
-              <p className="text-xs text-slate-400">{section.description}</p>
-            </label>
-          ))}
         </div>
       </section>
 
