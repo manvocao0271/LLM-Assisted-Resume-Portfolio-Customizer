@@ -95,6 +95,59 @@ const normalizeReviewOrder = (order, availableKeys = REVIEW_SECTION_KEYS) => {
   return unique;
 };
 
+// Try to derive a sensible section key order from a rendered UI spec (generatedSpec)
+const deriveOrderFromSpec = (spec, availableKeys = REVIEW_SECTION_KEYS) => {
+  if (!spec || !Array.isArray(spec.sections)) return [];
+  const matched = [];
+
+  const normalize = (s) => (s ? String(s).toLowerCase().replace(/[^a-z0-9 _]/g, '').trim() : '');
+
+  const findMatch = (candidate) => {
+    if (!candidate) return null;
+    const c = normalize(candidate);
+    if (!c) return null;
+    // Direct match against available keys
+    for (const key of availableKeys) {
+      if (c === key) return key;
+    }
+    // Partial includes (title -> key) heuristic
+    for (const key of availableKeys) {
+      if (c.includes(key) || key.includes(c)) return key;
+    }
+    // Token overlap
+    const tokens = c.split(/\s+/).filter(Boolean);
+    for (const t of tokens) {
+      for (const key of availableKeys) {
+        if (key.includes(t) || t.includes(key)) return key;
+      }
+    }
+    return null;
+  };
+
+  for (const section of spec.sections) {
+    const candidates = [];
+    if (section.key) candidates.push(section.key);
+    if (section.id) candidates.push(section.id);
+    if (section.title) candidates.push(section.title);
+    if (section.name) candidates.push(section.name);
+    if (section.props && typeof section.props === 'object') {
+      if (section.props.key) candidates.push(section.props.key);
+      if (section.props.id) candidates.push(section.props.id);
+      if (section.props.title) candidates.push(section.props.title);
+      if (section.props.name) candidates.push(section.props.name);
+    }
+
+    let found = null;
+    for (const c of candidates) {
+      found = findMatch(c);
+      if (found) break;
+    }
+    if (found && !matched.includes(found)) matched.push(found);
+  }
+
+  return matched;
+};
+
 const generateSummary = (payload) => {
   const name = typeof payload.name === 'string' ? payload.name.trim() : '';
   const experience = Array.isArray(payload.experience) ? payload.experience : [];
@@ -508,7 +561,14 @@ export const usePortfolioStore = create((set, get) => ({
     const allAvailableKeys = [...new Set([...CORE_SECTION_KEYS, ...detectedKeys])];
     
     // derive review order from payload layout if present, using detected keys
-    const nextOrder = normalizeReviewOrder(sanitized.layout?.sectionOrder, allAvailableKeys);
+    let nextOrder = normalizeReviewOrder(sanitized.layout?.sectionOrder, allAvailableKeys);
+    // If no explicit layout.order provided, try to derive order from a generatedSpec (preview)
+    if ((!(Array.isArray(sanitized.layout?.sectionOrder) && sanitized.layout.sectionOrder.length > 0)) && sanitized.generatedSpec) {
+      const derived = deriveOrderFromSpec(sanitized.generatedSpec, allAvailableKeys);
+      if (Array.isArray(derived) && derived.length > 0) {
+        nextOrder = normalizeReviewOrder(derived, allAvailableKeys);
+      }
+    }
     const withOrder = { ...sanitized, layout: { sectionOrder: nextOrder } };
     const dataWithMeta = applyMetaToData(withOrder, nextMeta);
     writeSession(nextMeta);

@@ -1191,7 +1191,17 @@ export function ReviewStep() {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => toggleSectionVisibility(section.key)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  toggleSectionVisibility(section.key);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    toggleSectionVisibility(section.key);
+                  }
+                }}
                 className={`inline-flex h-9 w-9 items-center justify-center rounded-md border transition ${
                   isVisible
                     ? 'border-slate-600 bg-slate-900/60 text-slate-300 hover:border-brand-400 hover:text-brand-300'
