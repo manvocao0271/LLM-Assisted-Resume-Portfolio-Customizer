@@ -1163,17 +1163,30 @@ export function ReviewStep() {
 
   const swapWithIndex = (index, direction) => {
     setReviewOrder((current) => {
-      const visibleKeys = activeSectionEntries.map((e) => e.key);
-      const orderedVisible = current.filter((k) => visibleKeys.includes(k));
-      const original = [...current];
-      const key = orderedVisible[index];
+      // Use the keys exactly as shown to the user (display order). Then
+      // swap their positions within the canonical `current` reviewOrder.
+      const displayedKeys = sectionEntries.map((e) => e.key);
       const swapIndex = direction === 'up' ? index - 1 : index + 1;
-      if (swapIndex < 0 || swapIndex >= orderedVisible.length) return current;
-      const neighborKey = orderedVisible[swapIndex];
-      const a = original.indexOf(key);
-      const b = original.indexOf(neighborKey);
-      if (a === -1 || b === -1) return current;
-      const next = [...original];
+      if (swapIndex < 0 || swapIndex >= displayedKeys.length) return current;
+
+      const key = displayedKeys[index];
+      const neighborKey = displayedKeys[swapIndex];
+
+      const next = [...current];
+      // Ensure both keys exist in the canonical order; if missing, append
+      // them at the end so we can swap their positions.
+      let a = next.indexOf(key);
+      if (a === -1) {
+        next.push(key);
+        a = next.length - 1;
+      }
+      let b = next.indexOf(neighborKey);
+      if (b === -1) {
+        next.push(neighborKey);
+        b = next.length - 1;
+      }
+
+      // Swap positions
       [next[a], next[b]] = [next[b], next[a]];
       return next;
     });

@@ -60,7 +60,7 @@ export function PortfolioPreviewFrame({ children }) {
   );
 }
 
-export function NeonPortfolioPreview({ data }) {
+export function NeonPortfolioPreview({ data, reviewOrder: propReviewOrder, sectionTitles: propSectionTitles }) {
   const theme = useMemo(() => {
     const options = Array.isArray(data?.themes?.options) && data.themes.options.length > 0
       ? data.themes.options
@@ -86,9 +86,46 @@ export function NeonPortfolioPreview({ data }) {
   const education = Array.isArray(data?.education) ? data.education : [];
   const contact = data?.contact || {};
   const sectionVisibility = data?.sectionVisibility || {};
-  const sectionOrder = Array.isArray(data?.layout?.sectionOrder) && data.layout.sectionOrder.length
-    ? data.layout.sectionOrder
-    : ORDER_KEYS;
+  const sectionOrder = Array.isArray(propReviewOrder) && propReviewOrder.length
+    ? propReviewOrder
+    : (Array.isArray(data?.layout?.sectionOrder) && data.layout.sectionOrder.length
+      ? data.layout.sectionOrder
+      : ORDER_KEYS);
+
+  // If the review/editor data contains dynamic keys that are not present in
+  // the saved `sectionOrder`, include them at render time so visibility
+  // toggles in the editor show up in the preview without mutating the
+  // stored layout order. This keeps visual ordering stable while ensuring
+  // newly toggled sections appear.
+  const dynamicRenderOrder = (() => {
+    try {
+      const knownExcludes = new Set(['job_description', 'job_type', 'resume_job_type', 'embedded_links', 'themes', 'raw', 'meta', 'raw_resume_text', 'layout', 'urls', 'url', 'links', 'websites', 'profiles', 'emails', 'email', 'phones', 'phone', 'phone_number']);
+      const keys = Object.keys(data || {}).filter((k) => !knownExcludes.has(k));
+      const extras = keys.filter((k) => !sectionOrder.includes(k));
+      // Only include extras that have content and aren't explicitly hidden
+      const meaningfulExtras = extras.filter((k) => {
+        const v = data[k];
+        if (sectionVisibility[k] === false) return false;
+        if (Array.isArray(v)) return v.length > 0;
+        if (v && typeof v === 'object') return Object.keys(v).length > 0;
+        return Boolean(v);
+      });
+      return [...sectionOrder, ...meaningfulExtras];
+    } catch (err) {
+      return sectionOrder;
+    }
+  })();
+
+  // Allow review/edit stage to provide user-friendly section titles.
+  const sectionTitleMap = propSectionTitles || data?.sectionTitles || (data?.generatedSpec && Array.isArray(data.generatedSpec.sections)
+    ? Object.fromEntries(data.generatedSpec.sections.map((s) => [s.key || s.id || s.name, s.title || s.name || s.label]))
+    : {});
+
+  const getSectionLabel = (key) => {
+    if (!key) return '';
+    if (sectionTitleMap && sectionTitleMap[key]) return sectionTitleMap[key];
+    return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  };
 
   const contactChips = (() => {
     const result = [];
@@ -137,7 +174,7 @@ export function NeonPortfolioPreview({ data }) {
         boxShadow: glowShadow,
       }}
     >
-      {sectionOrder.map((key) => {
+      {dynamicRenderOrder.map((key) => {
         // Check if section is hidden
         if (sectionVisibility[key] === false) {
           return null;
@@ -214,7 +251,7 @@ export function NeonPortfolioPreview({ data }) {
         if (key === 'experience') {
           return (
             <section key="experience" className="mt-8 space-y-3">
-              <SectionHeading label="Experience" accentColor={accentColor} />
+              <SectionHeading label={getSectionLabel('experience') || 'Experience'} accentColor={accentColor} />
               {experience.length === 0 ? (
                 <p
                   className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70"
@@ -255,7 +292,7 @@ export function NeonPortfolioPreview({ data }) {
         if (key === 'education') {
           return (
             <section key="education" className="mt-8 space-y-3">
-              <SectionHeading label="Education" accentColor={accentColor} />
+              <SectionHeading label={getSectionLabel('education') || 'Education'} accentColor={accentColor} />
               {education.length === 0 ? (
                 <p
                   className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70"
@@ -283,7 +320,7 @@ export function NeonPortfolioPreview({ data }) {
         if (key === 'projects') {
           return (
             <section key="projects" className="mt-8 space-y-3">
-              <SectionHeading label="Projects" accentColor={accentColor} />
+              <SectionHeading label={getSectionLabel('projects') || 'Projects'} accentColor={accentColor} />
               <div className="grid gap-3">
                 {projects.length === 0 ? (
                   <p
@@ -333,7 +370,7 @@ export function NeonPortfolioPreview({ data }) {
         if (key === 'skills') {
           return (
             <section key="skills" className="mt-8 space-y-3">
-              <SectionHeading label="Skills" accentColor={accentColor} />
+              <SectionHeading label={getSectionLabel('skills') || 'Skills'} accentColor={accentColor} />
               {skills.length === 0 ? (
                 <p
                   className="rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white/70"
@@ -374,7 +411,7 @@ export function NeonPortfolioPreview({ data }) {
           if (Array.isArray(sectionData) && sectionData.length > 0 && typeof sectionData[0] === 'string') {
             return (
               <section key={key} className="mt-8 space-y-3">
-                <SectionHeading label={key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} accentColor={accentColor} />
+                <SectionHeading label={getSectionLabel(key)} accentColor={accentColor} />
                 <div className="flex flex-wrap gap-3">
                   {sectionData.map((item, idx) => (
                     <span
@@ -398,7 +435,7 @@ export function NeonPortfolioPreview({ data }) {
           if (Array.isArray(sectionData) && sectionData.length > 0 && typeof sectionData[0] === 'object') {
             return (
               <section key={key} className="mt-8 space-y-3">
-                <SectionHeading label={key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())} accentColor={accentColor} />
+                <SectionHeading label={getSectionLabel(key)} accentColor={accentColor} />
                 {sectionData.map((entry, idx) => (
                   <article
                     key={entry.id || idx}
