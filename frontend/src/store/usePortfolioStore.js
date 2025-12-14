@@ -220,14 +220,18 @@ const readSession = () => {
   }
 };
 
-const writeSession = (meta) => {
+const writeSession = (meta, extras) => {
   if (typeof window === 'undefined') return;
   try {
     if (meta?.portfolioId) {
-      window.sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+      const payload = {
         portfolioId: meta.portfolioId,
         resumeId: meta.resumeId,
-      }));
+      };
+      if (extras && Array.isArray(extras.sectionOrder)) {
+        payload.sectionOrder = extras.sectionOrder;
+      }
+      window.sessionStorage.setItem(SESSION_KEY, JSON.stringify(payload));
     } else {
       window.sessionStorage.removeItem(SESSION_KEY);
     }
@@ -571,7 +575,7 @@ export const usePortfolioStore = create((set, get) => ({
     }
     const withOrder = { ...sanitized, layout: { sectionOrder: nextOrder } };
     const dataWithMeta = applyMetaToData(withOrder, nextMeta);
-    writeSession(nextMeta);
+    writeSession(nextMeta, { sectionOrder: nextOrder });
     set({
       data: dataWithMeta,
       meta: nextMeta,
@@ -606,6 +610,11 @@ export const usePortfolioStore = create((set, get) => ({
     const nextMeta = extractMeta(sanitized.meta, get().meta);
     const dataWithMeta = applyMetaToData(sanitized, nextMeta);
     set({ data: dataWithMeta, meta: nextMeta, reviewOrder: nextOrder, dirty: true });
+    try {
+      writeSession(nextMeta, { sectionOrder: nextOrder });
+    } catch (err) {
+      // ignore
+    }
   },
   updateTheme: (themeId) => {
     const { data } = get();
@@ -619,23 +628,58 @@ export const usePortfolioStore = create((set, get) => ({
     set({ data: dataWithMeta, meta: nextMeta, dirty: true });
   },
   setReviewOrder: (updater) => {
-    set((state) => {
-      const current = normalizeReviewOrder(state.reviewOrder);
-      const candidate = typeof updater === 'function' ? updater(current) : updater;
-      const next = normalizeReviewOrder(candidate);
-      const nextData = { ...state.data, layout: { sectionOrder: next } };
-      return { reviewOrder: next, data: nextData, dirty: true };
+    // Compute next order deterministically against all available keys
+    const currentData = get().data || {};
+    const detectedKeys = Object.keys(currentData).filter((key) => {
+      const value = currentData[key];
+      const isExcluded = ['job_description', 'job_type', 'resume_job_type', 'embedded_links',
+        'themes', 'raw', 'meta', 'raw_resume_text', 'layout', 'urls', 'url',
+        'links', 'websites', 'profiles', 'emails', 'email', 'phones', 'phone',
+        'phone_number'].includes(key);
+      if (isExcluded) return false;
+      return Array.isArray(value) || (value && typeof value === 'object');
     });
+    const allAvailableKeys = [...new Set([...CORE_SECTION_KEYS, ...detectedKeys])];
+
+    const current = normalizeReviewOrder(get().reviewOrder, allAvailableKeys);
+    const candidate = typeof updater === 'function' ? updater(current) : updater;
+    const next = normalizeReviewOrder(candidate, allAvailableKeys);
+    const nextData = { ...get().data, layout: { sectionOrder: next } };
+    set({ reviewOrder: next, data: nextData, dirty: true });
+    try {
+      // Persist the layout order to session storage so a page refresh preserves it
+      writeSession(get().meta, { sectionOrder: next });
+    } catch (err) {
+      // ignore session write errors
+    }
   },
   toggleSectionVisibility: (sectionKey) => {
+    // Toggle visibility. When turning a section ON, ensure it exists in the
+    // canonical layout.sectionOrder (append if missing) but never remove it
+    // when turning OFF so that toggles don't reorder other sections.
     set((state) => {
       const currentVisibility = state.data.sectionVisibility || {};
-      const nextVisibility = {
-        ...currentVisibility,
-        [sectionKey]: !currentVisibility[sectionKey],
-      };
-      const nextData = { ...state.data, sectionVisibility: nextVisibility };
-      return { data: nextData, dirty: true };
+      const willBeVisible = !currentVisibility[sectionKey];
+      const nextVisibility = { ...currentVisibility, [sectionKey]: willBeVisible };
+
+      // Start with current order (normalized fallback)
+      const currentOrder = Array.isArray(state.data?.layout?.sectionOrder) ? state.data.layout.sectionOrder.slice() : normalizeReviewOrder();
+      let nextOrder = currentOrder;
+
+      if (willBeVisible && !nextOrder.includes(sectionKey)) {
+        // Append the newly-visible section at the end without reordering others
+        nextOrder = [...nextOrder, sectionKey];
+      }
+
+      const nextData = { ...state.data, sectionVisibility: nextVisibility, layout: { sectionOrder: nextOrder } };
+
+      try {
+        writeSession(state.meta, { sectionOrder: nextOrder });
+      } catch (err) {
+        // ignore
+      }
+
+      return { data: nextData, reviewOrder: nextOrder, dirty: true };
     });
   },
   setMeta: (updater) => {
@@ -643,6 +687,11 @@ export const usePortfolioStore = create((set, get) => ({
     const nextMeta = typeof updater === 'function' ? updater(previous) : { ...previous, ...updater };
     const dataWithMeta = applyMetaToData(get().data, nextMeta);
     set({ meta: nextMeta, data: dataWithMeta, dirty: true });
+    try {
+      writeSession(nextMeta, { sectionOrder: dataWithMeta.layout?.sectionOrder });
+    } catch (err) {
+      // ignore
+    }
   },
   saveDraft: async () => {
     const { meta, data } = get();
@@ -674,10 +723,24 @@ export const usePortfolioStore = create((set, get) => ({
       const nextMeta = extractMeta(sanitized.meta, meta);
       const dataWithMeta = applyMetaToData(sanitized, nextMeta);
 
-      writeSession(nextMeta);
+      // Ensure the in-memory reviewOrder stays in sync with saved layout
+      const detectedKeys = Object.keys(dataWithMeta).filter((key) => {
+        const value = dataWithMeta[key];
+        const isExcluded = ['job_description', 'job_type', 'resume_job_type', 'embedded_links',
+          'themes', 'raw', 'meta', 'raw_resume_text', 'layout', 'urls', 'url',
+          'links', 'websites', 'profiles', 'emails', 'email', 'phones', 'phone',
+          'phone_number'].includes(key);
+        if (isExcluded) return false;
+        return Array.isArray(value) || (value && typeof value === 'object');
+      });
+      const allAvailableKeys = [...new Set([...CORE_SECTION_KEYS, ...detectedKeys])];
+      const nextOrder = normalizeReviewOrder(dataWithMeta.layout?.sectionOrder, allAvailableKeys);
+
+      writeSession(nextMeta, { sectionOrder: nextOrder });
       set({
         data: dataWithMeta,
         meta: nextMeta,
+        reviewOrder: nextOrder,
         saveState: 'saved',
         dirty: false,
         lastSavedAt: new Date().toISOString(),
@@ -709,10 +772,24 @@ export const usePortfolioStore = create((set, get) => ({
       const nextMeta = extractMeta(sanitized.meta, get().meta);
       const dataWithMeta = applyMetaToData(sanitized, nextMeta);
 
-      writeSession(nextMeta);
+      // Compute available keys for this loaded data so we can normalize order
+      const detectedKeys = Object.keys(dataWithMeta).filter((key) => {
+        const value = dataWithMeta[key];
+        const isExcluded = ['job_description', 'job_type', 'resume_job_type', 'embedded_links',
+          'themes', 'raw', 'meta', 'raw_resume_text', 'layout', 'urls', 'url',
+          'links', 'websites', 'profiles', 'emails', 'email', 'phones', 'phone',
+          'phone_number'].includes(key);
+        if (isExcluded) return false;
+        return Array.isArray(value) || (value && typeof value === 'object');
+      });
+      const allAvailableKeys = [...new Set([...CORE_SECTION_KEYS, ...detectedKeys])];
+      const nextOrder = normalizeReviewOrder(dataWithMeta.layout?.sectionOrder, allAvailableKeys);
+
+      writeSession(nextMeta, { sectionOrder: nextOrder });
       set({
         data: dataWithMeta,
         meta: nextMeta,
+        reviewOrder: nextOrder,
         loadState: 'loaded',
         uploadStatus: 'parsed',
         dirty: false,
@@ -732,7 +809,13 @@ export const usePortfolioStore = create((set, get) => ({
     if (!session?.portfolioId) {
       return false;
     }
-    return get().loadDraft(session.portfolioId);
+    const loaded = await get().loadDraft(session.portfolioId);
+    if (!loaded) return false;
+    if (Array.isArray(session.sectionOrder) && session.sectionOrder.length) {
+      // Restore user-defined/per-session ordering
+      get().setReviewOrder(session.sectionOrder);
+    }
+    return true;
   },
   clearSession: () => {
     clearSessionStorage();
